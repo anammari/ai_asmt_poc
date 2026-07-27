@@ -121,6 +121,8 @@ uv run python app.py
 2. In the UI:
   - (Optional) Add URL context in **Source URL Context (Optional)**.
   - Record your instructions in **Voice Prompt (Instruct the ASMR topic & style)** using the prompt above.
+  - (Optional) Fill **Optional: About You (Name, age, work, hobbies, etc.)**, for example:
+    `My name is John. I have two children and I often read them bedtime stories.`
   - Select at least **2 voices** in **Select Voice(s) (Will alternate per paragraph)** to validate voice alternation.
   - Set **Vocal Tone Preference** to **Whispering**.
   - Set **Target Duration (Minutes)** to **3**.
