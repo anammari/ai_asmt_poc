@@ -119,20 +119,22 @@ uv run python app.py
 ```
 
 2. In the UI:
-  - (Optional) Add a reference URL in **Source URL Context**.
-  - Record your instructions in **Voice Prompt (Instruct the ASMR topic & style)**, using the prompt above.
-  - Choose one or more voices in **Select Voice(s) (Will alternate per paragraph)**.
-  - Set **Vocal Tone Preference** to either **Soft Spoken** or **Whispering**.
+  - (Optional) Add URL context in **Source URL Context (Optional)**.
+  - Record your instructions in **Voice Prompt (Instruct the ASMR topic & style)** using the prompt above.
+  - Select at least **2 voices** in **Select Voice(s) (Will alternate per paragraph)** to validate voice alternation.
+  - Set **Vocal Tone Preference** to **Whispering**.
   - Set **Target Duration (Minutes)** to **3**.
   - Click **✨ Generate New ASMR**.
 
-3. Verify expected behavior:
-  - The app shows **Transcribed Instructions** from your voice prompt.
-  - The app displays a **View TTS-Ready Script** expander.
-  - Audio playback appears in-app after synthesis.
-  - **🔄 Re-Synthesize (Use Existing Script)** becomes available and can regenerate audio without another LLM rewrite.
-  - **💾 Browse & Save Audio Locally** opens a native save dialog and writes a WAV file to your chosen path.
-  - Session logs are written to `logs/asmr_session_<session_id>.log`.
+3. Verify expected behavior (new features):
+  - The app shows **Transcribed Instructions** from the voice input.
+  - The generated script is sanitized before synthesis (formatting artifacts removed, pause tags converted to `<<SILENCE...MS>>` markers).
+  - **View TTS-Ready Script** displays human-readable silence hints like *(Silence: 3000 ms)*.
+  - Output audio plays in-app and includes real silent gaps where pause markers exist.
+  - Multi-voice selection alternates voices across script paragraphs.
+  - **🔄 Re-Synthesize (Use Existing Script)** regenerates audio from the cached sanitized script without re-calling the LLM.
+  - **💾 Browse & Save Audio Locally** opens the native save dialog and writes a WAV file at the path you choose.
+  - A session log is written to `logs/asmr_session_<session_id>.log` including transcribed prompt, raw script, and sanitized script.
 
 ## Project Structure
 

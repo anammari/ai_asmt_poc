@@ -5,8 +5,6 @@ import time
 import re
 import logging
 from datetime import datetime
-import tkinter as tk
-from tkinter import filedialog
 
 if not os.environ.get("STREAMLIT_SERVER_FILE_WATCHER_TYPE"):
     os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
@@ -45,7 +43,7 @@ if not logger.handlers:
     logger.addHandler(fh)
 
 def sanitize_text(text: str) -> str:
-    """Cleans up LLM artifacts and strictly converts pause tags to pure silence markers."""
+    """Cleans up LLM artifacts, strictly converts pause tags, and prevents TTS spelling errors."""
     # Convert duration pause tags: [pause:2s] -> <<SILENCE2000MS>>
     text = re.sub(
         r'\[pause(?:[:=](\d+)s)?\]', 
@@ -56,29 +54,13 @@ def sanitize_text(text: str) -> str:
     # Convert action tags to 1-second silence markers
     text = re.sub(r'\[(?:soft breath|whisper|breath|sigh)\]', '<<SILENCE1000MS>>', text, flags=re.IGNORECASE)
     
+    # Fix 3: Strip elongated onomatopoeias (shhhhh, sssss, hmmmm) to prevent TTS from spelling them letter-by-letter
+    text = re.sub(r'\b(shh+|sss+|mmm+|zzz+|hmm+)\b', '<<SILENCE1000MS>>', text, flags=re.IGNORECASE)
+    
     # Strip any remaining unhandled bracket tags and formatting asterisks to prevent TTS noise
     text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'[\*\_]', '', text) 
     return text.strip()
-
-def prompt_save_location(default_filename):
-    """Opens a native OS 'Save As' window to let the user browse their file system."""
-    try:
-        root = tk.Tk()
-        root.withdraw()
-        # Bring the dialog to the front of all windows
-        root.attributes('-topmost', True)
-        file_path = filedialog.asksaveasfilename(
-            initialfile=default_filename,
-            title="Save ASMR Audio",
-            defaultextension=".wav",
-            filetypes=[("WAV Audio", "*.wav")]
-        )
-        root.destroy()
-        return file_path
-    except Exception as e:
-        logger.error(f"Tkinter dialog failed: {e}")
-        return None
 
 def main():
     st.set_page_config(page_title="AI ASMR Generator", layout="centered")
@@ -108,41 +90,55 @@ def main():
     url = st.text_input("Source URL Context (Optional)")
     audio_file = st.audio_input("Voice Prompt (Instruct the ASMR topic & style)")
     
-    # Humanized multi-voice selection mapping
-    VOICE_MAP = {
-        "Bella (American Female)": "af_bella",
-        "Sarah (American Female)": "af_sarah",
-        "Alloy (American Female)": "af_alloy",
-        "Nicole (American Female)": "af_nicole",
-        "Adam (American Male)": "am_adam",
-        "Michael (American Male)": "am_michael",
-        "Emma (British Female)": "bf_emma",
-        "Isabella (British Female)": "bf_isabella",
-        "George (British Male)": "bm_george",
-        "Lewis (British Male)": "bm_lewis",
+    # Improvement 1: Personal Info Area for Personal Attention
+    user_info = st.text_area(
+        "Optional: About You (Name, age, work, hobbies, etc.)", 
+        placeholder="Share a little about yourself if you'd like personalized attention in the ASMR script..."
+    )
+    
+    # Fix 1: Categorized Voices by Tone
+    VOICE_CATEGORIES = {
+        "Soft Spoken": {
+            "Bella (American Female)": "af_bella",
+            "Sarah (American Female)": "af_sarah",
+            "Alloy (American Female)": "af_alloy",
+            "Adam (American Male)": "am_adam",
+            "Michael (American Male)": "am_michael",
+            "Emma (British Female)": "bf_emma",
+            "George (British Male)": "bm_george",
+        },
+        "Whispering": {
+            "Nicole (American Female)": "af_nicole",
+            "Isabella (British Female)": "bf_isabella",
+            "Lewis (British Male)": "bm_lewis",
+        }
     }
     
-    selected_voice_names = st.multiselect(
-        "Select Voice(s) (Will alternate per paragraph)", 
-        list(VOICE_MAP.keys()), 
-        default=["Bella (American Female)"]
-    )
-    selected_voice_ids = [VOICE_MAP[name] for name in selected_voice_names]
+    st.markdown("---")
+    # Fix 1: Vocal tone selection strictly precedes and filters the voice selection
+    vocal_tone = st.radio("1. Vocal Tone Preference", ["Soft Spoken", "Whispering"], horizontal=True)
     
-    # explicit Whispering vs Soft Spoken preference control
-    vocal_tone = st.radio("Vocal Tone Preference", ["Soft Spoken", "Whispering"], horizontal=True)
-    duration = st.selectbox("Target Duration (Minutes)", [1, 2, 3, 4, 5])
+    available_voices = VOICE_CATEGORIES[vocal_tone]
+    
+    selected_voice_names = st.multiselect(
+        "2. Select Voice(s) (Filtered by tone; will alternate per paragraph)", 
+        list(available_voices.keys()), 
+        default=[list(available_voices.keys())[0]]
+    )
+    selected_voice_ids = [available_voices[name] for name in selected_voice_names]
+    
+    duration = st.selectbox("3. Target Duration (Minutes)", [1, 2, 3, 4, 5])
+    
+    st.markdown("---")
     
     col1, col2 = st.columns(2)
     generate_new = col1.button("✨ Generate New ASMR")
     
-    # Re-synthesize audio from existing script
     regenerate_audio = col2.button("🔄 Re-Synthesize (Use Existing Script)", disabled="clean_script" not in st.session_state)
 
     if generate_new or regenerate_audio:
         logger.info("--- New Generation/Synthesis Started ---")
         
-        # Re-use existing script if requested
         if regenerate_audio and "clean_script" in st.session_state:
             clean_script = st.session_state.clean_script
             st.info("Using previously generated script for synthesis...")
@@ -160,23 +156,25 @@ def main():
                     logger.info(f"Fetched context from URL, length: {len(context)}")
                 
             with st.spinner("Rewriting script for ASMR pacing..."):
-                # Pass the requested tone down to the LLM prompt
-                script = rewrite_script(context_text=context, user_prompt=user_text, target_minutes=duration, vocal_tone=vocal_tone)
+                script = rewrite_script(
+                    context_text=context, 
+                    user_prompt=user_text, 
+                    target_minutes=duration, 
+                    vocal_tone=vocal_tone,
+                    user_info=user_info # Pass the new personal info down to the LLM
+                )
                 logger.info(f"Raw Generated Script:\n{script}")
                 
                 clean_script = sanitize_text(script)
-                # Store it in session state to allow Re-synthesis without hitting LLM again
                 st.session_state.clean_script = clean_script
                 logger.info(f"Sanitized TTS Script:\n{clean_script}")
                 
         with st.expander("View TTS-Ready Script", expanded=True):
-            # Make it readable for the UI by temporarily swapping markers back to text
             st.write(clean_script.replace("<<SILENCE", "\n\n*(Silence: ").replace("MS>>", " ms)*\n\n"))
             
         with st.spinner("Synthesizing audio (this may take a moment)..."):
             tts_pipe = create_tts_pipeline()
             try:
-                # Pass the tone and selected voice IDs down to the TTS engine
                 audio_bytes = synthesize(tts_pipe, clean_script, voices=selected_voice_ids, vocal_tone=vocal_tone)
                 st.session_state.audio_bytes = audio_bytes
                 logger.info("Audio synthesis complete.")
@@ -188,23 +186,18 @@ def main():
                 logger.error(f"TTS Synthesis Failed: {str(e)}")
                 st.error(f"Failed to synthesize audio: {str(e)}")
                 
-    # Replacing Streamlit download with native Browse/Save window
+    # Fix 2 & Improvement 3: Replaced Tkinter OS dialog with Streamlit's native web-safe Download Button
     if "audio_bytes" in st.session_state:
         st.markdown("---")
-        if st.button("💾 Browse & Save Audio Locally"):
-            default_filename = f"asmr_audio_{st.session_state.session_id}.wav"
-            # Launch native OS browse/save window
-            save_path = prompt_save_location(default_filename)
-            
-            if save_path:
-                try:
-                    with open(save_path, "wb") as f:
-                        f.write(st.session_state.audio_bytes)
-                    st.success(f"Successfully saved to: {save_path}")
-                    logger.info(f"Saved local file to {save_path}")
-                except Exception as e:
-                    st.error(f"Error saving file: {e}")
-                    logger.error(f"Error saving file: {e}")
+        default_filename = f"asmr_audio_{st.session_state.session_id}.wav"
+        
+        st.download_button(
+            label="💾 Download Audio",
+            data=st.session_state.audio_bytes,
+            file_name=default_filename,
+            mime="audio/wav",
+            use_container_width=True
+        )
         
 if __name__ == "__main__":
     main()
