@@ -51,8 +51,13 @@ def sanitize_text(text: str) -> str:
         text, 
         flags=re.IGNORECASE
     )
-    # Convert action tags to 1-second silence markers
-    text = re.sub(r'\[(?:soft breath|whisper|breath|sigh)\]', '<<SILENCE1000MS>>', text, flags=re.IGNORECASE)
+    # Convert action tags to 1-second silence markers (English + Arabic)
+    text = re.sub(
+        r'\[(?:soft breath|whisper|breath|sigh|همس|تنفس|توقف)\]',
+        '<<SILENCE1000MS>>',
+        text,
+        flags=re.IGNORECASE,
+    )
     
     # Fix 3: Strip elongated onomatopoeias (shhhhh, sssss, hmmmm) to prevent TTS from spelling them letter-by-letter
     text = re.sub(r'\b(shh+|sss+|mmm+|zzz+|hmm+)\b', '<<SILENCE1000MS>>', text, flags=re.IGNORECASE)
@@ -61,6 +66,44 @@ def sanitize_text(text: str) -> str:
     text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'[\*\_]', '', text) 
     return text.strip()
+
+ENGLISH_VOICE_CATEGORIES = {
+    "Soft Spoken": {
+        "Bella (American Female)": "af_bella",
+        "Sarah (American Female)": "af_sarah",
+        "Alloy (American Female)": "af_alloy",
+        "Adam (American Male)": "am_adam",
+        "Michael (American Male)": "am_michael",
+        "Emma (British Female)": "bf_emma",
+        "George (British Male)": "bm_george",
+    },
+    "Whispering": {
+        "Nicole (American Female)": "af_nicole",
+        "Isabella (British Female)": "bf_isabella",
+        "Lewis (British Male)": "bm_lewis",
+    },
+}
+
+ARABIC_AHMAD_VOICE = {"Ahmad (Arabic Male) - SILMA/F5-TTS": "ar_ahmad"}
+
+
+def get_available_voices(selected_language: str, vocal_tone: str) -> dict[str, str]:
+    if selected_language.startswith("Arabic"):
+        return ARABIC_AHMAD_VOICE
+    return ENGLISH_VOICE_CATEGORIES[vocal_tone]
+
+
+def _resolve_user_prompt(selected_language: str, arabic_prompt: str, audio_file) -> tuple[str, str]:
+    normalized_language = selected_language.strip().lower()
+    if normalized_language.startswith("arabic"):
+        return arabic_prompt.strip(), "typed"
+
+    if audio_file:
+        stt_pipe = create_stt_pipeline()
+        transcribed = transcribe(stt_pipe, audio_file.getvalue(), language="English")
+        return transcribed, "transcribed"
+
+    return "", "empty"
 
 def main():
     st.set_page_config(page_title="AI ASMR Generator", layout="centered")
@@ -88,7 +131,6 @@ def main():
     st.markdown("Provide a source topic and instructions to generate a calming ASMR audio track.")
     
     url = st.text_input("Source URL Context (Optional)")
-    audio_file = st.audio_input("Voice Prompt (Instruct the ASMR topic & style)")
     
     # Improvement 1: Personal Info Area for Personal Attention
     user_info = st.text_area(
@@ -96,38 +138,36 @@ def main():
         placeholder="Share a little about yourself if you'd like personalized attention in the ASMR script..."
     )
     
-    # Fix 1: Categorized Voices by Tone
-    VOICE_CATEGORIES = {
-        "Soft Spoken": {
-            "Bella (American Female)": "af_bella",
-            "Sarah (American Female)": "af_sarah",
-            "Alloy (American Female)": "af_alloy",
-            "Adam (American Male)": "am_adam",
-            "Michael (American Male)": "am_michael",
-            "Emma (British Female)": "bf_emma",
-            "George (British Male)": "bm_george",
-        },
-        "Whispering": {
-            "Nicole (American Female)": "af_nicole",
-            "Isabella (British Female)": "bf_isabella",
-            "Lewis (British Male)": "bm_lewis",
-        }
-    }
-    
     st.markdown("---")
+    selected_language = st.radio(
+        "1. Script Language",
+        ["English", "Arabic (العربية)"],
+        horizontal=True,
+    )
+
+    arabic_prompt = ""
+    audio_file = None
+    if selected_language.startswith("Arabic"):
+        arabic_prompt = st.text_area(
+            "Arabic Written Prompt (النص العربي)",
+            placeholder="اكتب التعليمات العربية هنا...",
+        )
+    else:
+        audio_file = st.audio_input("Voice Prompt (Instruct the ASMR topic & style)")
+
     # Fix 1: Vocal tone selection strictly precedes and filters the voice selection
-    vocal_tone = st.radio("1. Vocal Tone Preference", ["Soft Spoken", "Whispering"], horizontal=True)
+    vocal_tone = st.radio("2. Vocal Tone Preference", ["Soft Spoken", "Whispering"], horizontal=True)
     
-    available_voices = VOICE_CATEGORIES[vocal_tone]
+    available_voices = get_available_voices(selected_language, vocal_tone)
     
     selected_voice_names = st.multiselect(
-        "2. Select Voice(s) (Filtered by tone; will alternate per paragraph)", 
+        "3. Select Voice(s) (Filtered by tone; will alternate per paragraph)", 
         list(available_voices.keys()), 
         default=[list(available_voices.keys())[0]]
     )
     selected_voice_ids = [available_voices[name] for name in selected_voice_names]
     
-    duration = st.selectbox("3. Target Duration (Minutes)", [1, 2, 3, 4, 5])
+    duration = st.selectbox("4. Target Duration (Minutes)", [1, 2, 3, 4, 5])
     
     st.markdown("---")
     
@@ -144,10 +184,14 @@ def main():
             st.info("Using previously generated script for synthesis...")
         else:
             with st.spinner("Processing inputs & transcribing..."):
-                user_text = ""
-                if audio_file:
-                    stt_pipe = create_stt_pipeline()
-                    user_text = transcribe(stt_pipe, audio_file.getvalue())
+                user_text, prompt_mode = _resolve_user_prompt(selected_language, arabic_prompt, audio_file)
+                if prompt_mode == "typed":
+                    if not user_text:
+                        st.error("Please enter Arabic written instructions before generating.")
+                        return
+                    logger.info(f"Arabic Written Prompt: {user_text}")
+                    st.info(f"**Arabic Written Instructions:** {user_text}")
+                elif prompt_mode == "transcribed":
                     logger.info(f"Transcribed User Prompt: {user_text}")
                     st.info(f"**Transcribed Instructions:** {user_text}")
                 
@@ -156,13 +200,19 @@ def main():
                     logger.info(f"Fetched context from URL, length: {len(context)}")
                 
             with st.spinner("Rewriting script for ASMR pacing..."):
-                script = rewrite_script(
-                    context_text=context, 
-                    user_prompt=user_text, 
-                    target_minutes=duration, 
-                    vocal_tone=vocal_tone,
-                    user_info=user_info # Pass the new personal info down to the LLM
-                )
+                try:
+                    script = rewrite_script(
+                        context_text=context, 
+                        user_prompt=user_text, 
+                        target_minutes=duration, 
+                        vocal_tone=vocal_tone,
+                        user_info=user_info, # Pass the new personal info down to the LLM
+                        language=selected_language,
+                    )
+                except Exception as e:
+                    logger.error(f"Script generation failed: {str(e)}")
+                    st.error(f"Failed to generate script: {str(e)}")
+                    return
                 logger.info(f"Raw Generated Script:\n{script}")
                 
                 clean_script = sanitize_text(script)

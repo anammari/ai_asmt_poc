@@ -45,6 +45,7 @@ class TestSttSmoke(unittest.TestCase):
 
         def fake_pipe(inp, **kwargs):
             captured["input"] = inp
+            captured["kwargs"] = kwargs
             return {"text": "ok"}
 
         sentinel = {"array": [0.0], "sampling_rate": 16000}
@@ -52,10 +53,36 @@ class TestSttSmoke(unittest.TestCase):
 
         self.assertEqual(text, "ok")
         self.assertIs(captured["input"], sentinel)
+        self.assertEqual(captured["kwargs"]["batch_size"], 4)
+
+    def test_transcribe_auto_retries_with_arabic_on_repetition(self):
+        calls = []
+
+        repetitive = "not that bad " * 30
+        arabic = "صِف لي صوتاً هادئاً للمطر يلمس النافذة ببطء"
+
+        def fake_pipe(inp, **kwargs):
+            calls.append(kwargs)
+            language = kwargs.get("generate_kwargs", {}).get("language")
+            if language == "arabic":
+                return {"text": arabic}
+            return {"text": repetitive.strip()}
+
+        sentinel = {"array": [0.0], "sampling_rate": 16000}
+        text = stt.transcribe(fake_pipe, sentinel, language="Auto")
+
+        self.assertEqual(text, arabic)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("language", calls[0]["generate_kwargs"])
+        self.assertEqual(calls[1]["generate_kwargs"]["language"], "arabic")
 
     def test_torchcodec_guard_is_forced_off(self):
         stt._disable_torchcodec_for_asr()
         self.assertFalse(asr_pipeline.is_torchcodec_available())
+
+    def test_cleanup_transcript_strips_repeated_ui_prefix(self):
+        text = "Transcribed Instructions: Transcribed Instructions: صِف لي صوت المطر"
+        self.assertEqual(stt._cleanup_transcript(text), "صِف لي صوت المطر")
 
 
 if __name__ == "__main__":

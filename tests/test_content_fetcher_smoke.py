@@ -5,34 +5,35 @@ import content_fetcher
 
 
 class TestContentFetcherSmoke(unittest.TestCase):
-    def test_context_falls_back_when_loader_raises(self):
-        class FailingLoader:
-            def __init__(self, *args, **kwargs):
-                pass
+    def test_fetch_content_routes_movie_prefix(self):
+        with patch.object(content_fetcher, "fetch_movie_info", return_value="movie context") as mock_fetch:
+            result = content_fetcher.fetch_content("movie: interstellar")
 
-            def load(self):
-                raise ValueError("JSON decode failed")
+        self.assertEqual(result, "movie context")
+        mock_fetch.assert_called_once_with("interstellar")
 
-        with patch.object(content_fetcher, "WikipediaLoader", FailingLoader):
-            result = content_fetcher.fetch_content("context", "aurora borealis")
+    def test_fetch_content_routes_wiki_prefix(self):
+        with patch.object(content_fetcher, "fetch_wikipedia", return_value="wiki context") as mock_fetch:
+            result = content_fetcher.fetch_content("wiki: aurora borealis")
 
-        self.assertIsInstance(result, str)
-        self.assertTrue(len(result) > 0)
-        self.assertIn("aurora borealis", result.lower())
+        self.assertEqual(result, "wiki context")
+        mock_fetch.assert_called_once_with("aurora borealis")
 
-    def test_context_falls_back_when_no_docs(self):
-        class EmptyLoader:
-            def __init__(self, *args, **kwargs):
-                pass
+    def test_fetch_content_routes_wikipedia_url(self):
+        with patch.object(content_fetcher, "fetch_wikipedia", return_value="url wiki context") as mock_fetch:
+            result = content_fetcher.fetch_content("https://en.wikipedia.org/wiki/Deep_ocean")
 
-            def load(self):
-                return []
+        self.assertEqual(result, "url wiki context")
+        mock_fetch.assert_called_once_with("Deep ocean")
 
-        with patch.object(content_fetcher, "WikipediaLoader", EmptyLoader):
-            result = content_fetcher.fetch_content("context", "deep ocean")
+    def test_fetch_content_returns_empty_for_blank_source(self):
+        self.assertEqual(content_fetcher.fetch_content("   "), "")
 
-        self.assertTrue(result)
-        self.assertIn("deep ocean", result.lower())
+    def test_fetch_webpage_returns_fallback_on_request_error(self):
+        with patch("content_fetcher.requests.get", side_effect=Exception("network error")):
+            result = content_fetcher.fetch_webpage("https://example.com")
+
+        self.assertIn("Background contextual fetch failed", result)
 
 
 if __name__ == "__main__":

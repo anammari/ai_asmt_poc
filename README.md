@@ -23,6 +23,8 @@ Key `.env` settings:
 # LLM Provider Selection: "gemini", "openai", or "ollama"
 LLM_PROVIDER=gemini
 GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_FALLBACK_MODELS=gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest
 
 # TTS Engine Selection: "kokoro" or "edge-tts"
 TTS_ENGINE=kokoro
@@ -120,7 +122,9 @@ uv run python app.py
 
 2. In the UI:
   - (Optional) Add URL context in **Source URL Context (Optional)**.
-  - Record your instructions in **Voice Prompt (Instruct the ASMR topic & style)** using the prompt above.
+  - Set **Script Language**:
+    - **English**: record instructions in **Voice Prompt (Instruct the ASMR topic & style)**.
+    - **Arabic (العربية)**: enter instructions in **Arabic Written Prompt (النص العربي)** (voice input is not used).
   - (Optional) Fill **Optional: About You (Name, age, work, hobbies, etc.)**, for example:
     `My name is John. I have two children and I often read them bedtime stories.`
   - Select at least **2 voices** in **Select Voice(s) (Will alternate per paragraph)** to validate voice alternation.
@@ -129,8 +133,9 @@ uv run python app.py
   - Click **✨ Generate New ASMR**.
 
 3. Verify expected behavior (new features):
-  - The app shows **Transcribed Instructions** from the voice input.
+  - The app shows **Transcribed Instructions** for English voice input, and **Arabic Written Instructions** when Arabic text mode is selected.
   - The generated script is sanitized before synthesis (formatting artifacts removed, pause tags converted to `<<SILENCE...MS>>` markers).
+  - If Gemini returns transient 429/500/503 errors, generation uses exponential backoff retries, then tries fallback Gemini models, then falls back to Ollama (or local minimal fallback if Ollama is unavailable).
   - **View TTS-Ready Script** displays human-readable silence hints like *(Silence: 3000 ms)*.
   - Output audio plays in-app and includes real silent gaps where pause markers exist.
   - Multi-voice selection alternates voices across script paragraphs.

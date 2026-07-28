@@ -1,35 +1,62 @@
-import tempfile
 import unittest
-from pathlib import Path
+from unittest.mock import patch
 
 import app
 
 
 class TestAppSmoke(unittest.TestCase):
-    def test_sanitize_text_for_tts(self):
+    def test_sanitize_text_converts_default_pause(self):
         raw = "*soft* [pause] # Heading [whisper] hello   world"
-        cleaned = app._sanitize_text_for_tts(raw)
+        cleaned = app.sanitize_text(raw)
         self.assertNotIn("*", cleaned)
-        self.assertNotIn("#", cleaned)
         self.assertNotIn("[", cleaned)
-        self.assertIn("<<SILENCE700MS>>", cleaned)
-        self.assertIn("hello world", cleaned)
+        self.assertIn("<<SILENCE1500MS>>", cleaned)
+        self.assertIn("<<SILENCE1000MS>>", cleaned)
+        self.assertIn("# Heading", cleaned)
 
-    def test_sanitize_text_for_tts_duration_tag(self):
+    def test_sanitize_text_converts_duration_pause(self):
         raw = "Intro [pause:2s] outro"
-        cleaned = app._sanitize_text_for_tts(raw)
+        cleaned = app.sanitize_text(raw)
         self.assertIn("<<SILENCE2000MS>>", cleaned)
 
-    def test_truncate_for_duration(self):
-        long_text = " ".join(["word"] * 500)
-        trimmed = app._truncate_for_duration(long_text, max_minutes=1, words_per_minute=90)
-        self.assertLessEqual(len(trimmed.split()), 90)
+    def test_sanitize_text_clamps_pause_bounds(self):
+        cleaned = app.sanitize_text("a [pause:0s] b [pause:99s] c")
+        self.assertIn("<<SILENCE200MS>>", cleaned)
+        self.assertIn("<<SILENCE5000MS>>", cleaned)
 
-    def test_resolve_output_path_creates_directory(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = app._resolve_output_path(str(Path(tmp) / "nested"), "demo")
-            self.assertTrue(out.parent.exists())
-            self.assertEqual(out.suffix, ".wav")
+    def test_resolve_user_prompt_uses_arabic_typed_input(self):
+        text, mode = app._resolve_user_prompt(
+            selected_language="Arabic (العربية)",
+            arabic_prompt="  صِف لي صوتاً هادئاً للمطر  ",
+            audio_file=None,
+        )
+        self.assertEqual(mode, "typed")
+        self.assertEqual(text, "صِف لي صوتاً هادئاً للمطر")
+
+    def test_resolve_user_prompt_uses_stt_for_english(self):
+        class _Audio:
+            @staticmethod
+            def getvalue():
+                return b"audio-bytes"
+
+        with patch("app.create_stt_pipeline", return_value="pipe"), patch("app.transcribe", return_value="spoken text") as mock_transcribe:
+            text, mode = app._resolve_user_prompt(
+                selected_language="English",
+                arabic_prompt="",
+                audio_file=_Audio(),
+            )
+        self.assertEqual(mode, "transcribed")
+        self.assertEqual(text, "spoken text")
+        mock_transcribe.assert_called_once_with("pipe", b"audio-bytes", language="English")
+
+    def test_get_available_voices_for_arabic_only_includes_ahmad(self):
+        voices = app.get_available_voices("Arabic (العربية)", "Soft Spoken")
+        self.assertEqual(voices, {"Ahmad (Arabic Male) - SILMA/F5-TTS": "ar_ahmad"})
+
+    def test_get_available_voices_for_english_keeps_tone_filter(self):
+        voices = app.get_available_voices("English", "Whispering")
+        self.assertIn("Nicole (American Female)", voices)
+        self.assertNotIn("Bella (American Female)", voices)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ wheels/
 # Runtime/generated artifacts
 logs/
 output/
+input/
 err.log
 asmr_sessions.log
 
