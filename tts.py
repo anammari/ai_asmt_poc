@@ -2,8 +2,11 @@
 import os
 import re
 import io
+import inspect
 import numpy as np
 import soundfile as sf
+import yaml
+from huggingface_hub import hf_hub_download
 
 try:
     from kokoro import KPipeline
@@ -12,11 +15,49 @@ except ImportError:
     KOKORO_AVAILABLE = False
 
 _SILMA_MODEL = None
+_SILMA_VOCODER = None
+_SILMA_REPO_ID = "silma-ai/silma-tts"
+_F5_DEVICE = os.getenv("F5_TTS_DEVICE", "cpu")
 _ARABIC_REF_AUDIO = "input/test_ahmad_2.wav"
 _ARABIC_REF_TEXT = (
     "خذ نفس عميق، ريح بالك كل شي تمام، خلي عيونك مغمضة واسمعني، "
     "اليوم كان طويل صح؟ هلق صار الوقت ترتاح، انسى كل الهم والقلق"
 )
+
+
+def _resolve_silma_assets() -> tuple[dict, str, str]:
+    config_path = hf_hub_download(repo_id=_SILMA_REPO_ID, filename="config.yaml")
+    ckpt_path = hf_hub_download(repo_id=_SILMA_REPO_ID, filename="model.pt")
+    vocab_path = hf_hub_download(repo_id=_SILMA_REPO_ID, filename="vocab.txt")
+
+    with open(config_path, "r", encoding="utf-8") as cfg_file:
+        config = yaml.safe_load(cfg_file)
+    model_cfg = config["model"]["arch"]
+    return model_cfg, ckpt_path, vocab_path
+
+
+def _build_f5_load_model_kwargs(load_model, DiT, model_cfg: dict, ckpt_path: str, vocab_path: str):
+    sig = inspect.signature(load_model)
+    kwargs = {
+        "model_cls": DiT,
+        "mel_spec_type": "vocos",
+    }
+    if "ckpt_path" in sig.parameters:
+        kwargs["ckpt_path"] = ckpt_path
+    elif "chkp_path" in sig.parameters:
+        kwargs["chkp_path"] = ckpt_path
+    elif "ckpt_file" in sig.parameters:
+        kwargs["ckpt_file"] = ckpt_path
+    elif "model_ckpt" in sig.parameters:
+        kwargs["model_ckpt"] = ckpt_path
+
+    if "vocab_file" in sig.parameters:
+        kwargs["vocab_file"] = vocab_path
+    if "model_cfg" in sig.parameters:
+        kwargs["model_cfg"] = model_cfg
+    if "device" in sig.parameters:
+        kwargs["device"] = _F5_DEVICE
+    return kwargs
 
 
 def _resample_linear(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
@@ -43,13 +84,32 @@ def _load_silma_model():
             "Arabic SILMA/F5-TTS requires 'f5-tts'. Install dependencies and retry."
         ) from exc
 
+    model_cfg, ckpt_path, vocab_path = _resolve_silma_assets()
     _SILMA_MODEL = load_model(
-        model_cls=DiT,
-        ckpt_path="silma-ai/silma-tts",
-        mel_spec_type="vocos",
-        vocab_file=None,
+        **_build_f5_load_model_kwargs(load_model, DiT, model_cfg, ckpt_path, vocab_path)
     )
     return _SILMA_MODEL
+
+
+def _load_silma_vocoder():
+    global _SILMA_VOCODER
+    if _SILMA_VOCODER is not None:
+        return _SILMA_VOCODER
+
+    try:
+        from f5_tts.infer.utils_infer import load_vocoder
+    except ImportError as exc:
+        raise ImportError(
+            "Arabic SILMA/F5-TTS requires 'f5-tts'. Install dependencies and retry."
+        ) from exc
+
+    _SILMA_VOCODER = load_vocoder(
+        vocoder_name="vocos",
+        is_local=False,
+        local_path="",
+        device=_F5_DEVICE,
+    )
+    return _SILMA_VOCODER
 
 
 def generate_f5_audio(text: str, speed: float = 0.85) -> np.ndarray:
@@ -60,20 +120,39 @@ def generate_f5_audio(text: str, speed: float = 0.85) -> np.ndarray:
 
     try:
         from f5_tts.infer.utils_infer import infer_process
+        import f5_tts.infer.utils_infer as infer_utils
+        import torch
     except ImportError as exc:
         raise ImportError(
             "Arabic SILMA/F5-TTS requires 'f5-tts'. Install dependencies and retry."
         ) from exc
 
     model = _load_silma_model()
-    wav_tensor, sample_rate, _ = infer_process(
-        ref_audio=_ARABIC_REF_AUDIO,
-        ref_text=_ARABIC_REF_TEXT,
-        gen_text=text,
-        model_obj=model,
-        mel_spec_type="vocos",
-        speed=speed,
-    )
+    vocoder = _load_silma_vocoder()
+
+    def _soundfile_audio_loader(path: str):
+        audio_np, sample_rate = sf.read(path, dtype="float32")
+        if audio_np.ndim == 1:
+            audio_np = np.expand_dims(audio_np, axis=0)
+        else:
+            audio_np = audio_np.T
+        return torch.from_numpy(audio_np), sample_rate
+
+    original_torchaudio_load = infer_utils.torchaudio.load
+    infer_utils.torchaudio.load = _soundfile_audio_loader
+    try:
+        wav_tensor, sample_rate, _ = infer_process(
+            ref_audio=_ARABIC_REF_AUDIO,
+            ref_text=_ARABIC_REF_TEXT,
+            gen_text=text,
+            model_obj=model,
+            vocoder=vocoder,
+            mel_spec_type="vocos",
+            speed=speed,
+            device=_F5_DEVICE,
+        )
+    finally:
+        infer_utils.torchaudio.load = original_torchaudio_load
 
     if hasattr(wav_tensor, "detach"):
         wav_array = wav_tensor.squeeze().detach().cpu().numpy()
