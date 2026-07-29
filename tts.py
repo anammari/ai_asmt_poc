@@ -14,15 +14,50 @@ try:
 except ImportError:
     KOKORO_AVAILABLE = False
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
 _SILMA_MODEL = None
 _SILMA_VOCODER = None
 _SILMA_REPO_ID = "silma-ai/silma-tts"
 _F5_DEVICE = os.getenv("F5_TTS_DEVICE", "cpu")
-_ARABIC_REF_AUDIO = "input/test_ahmad_2.wav"
+
+# F5-TTS inference tuning (see f5_asmr_inference.py for before/after runs).
+# nfe_step: diffusion steps; higher = cleaner whisper transients.
+# cfg_strength: higher = stricter text adherence (fights hallucinations).
+# sway_sampling_coef: -1.0 disables Sway Sampling; a positive value enables it.
+# Defaults mirror the stock F5 profile proven stable with the Arabic voice;
+# tune via env vars only after validating with f5_asmr_inference.py --sweep.
+_F5_NFE_STEP = _env_int("F5_NFE_STEP", 32)
+_F5_CFG_STRENGTH = _env_float("F5_CFG_STRENGTH", 2.0)
+_F5_SWAY_SAMPLING_COEF = _env_float("F5_SWAY_SAMPLING_COEF", -1.0)
+_F5_TARGET_RMS = _env_float("F5_TARGET_RMS", 0.1)
+
+# Arabic TTS backend: "silma" (local SILMA/F5-TTS) or "fish" (Fish Audio API).
+_ARABIC_TTS_BACKEND = os.getenv("ARABIC_TTS_BACKEND", "silma").strip().lower()
+
+# Arabic reference audio engineering: ideally a 5-10s, mono, >=24kHz dry
+# studio whisper clip (use prepare_ref_audio.py to produce one).
+_ARABIC_REF_AUDIO = os.getenv("ARABIC_REF_AUDIO", "input/test_ahmad_2.wav")
+_ARABIC_REF_TEXT_PATH = os.getenv("ARABIC_REF_TEXT_PATH", "input/test_ahmad_2.txt")
 _ARABIC_REF_TEXT = (
     "خذ نفس عميق، ريح بالك كل شي تمام، خلي عيونك مغمضة واسمعني، "
     "اليوم كان طويل صح؟ هلق صار الوقت ترتاح، انسى كل الهم والقلق"
 )
+_ARABIC_REF_TEXT_CACHE: str | None = None
+_REF_AUDIO_WARNED = False
+_PREPROCESS_WARNED = False
 
 
 def _resolve_silma_assets() -> tuple[dict, str, str]:
@@ -112,10 +147,122 @@ def _load_silma_vocoder():
     return _SILMA_VOCODER
 
 
-def generate_f5_audio(text: str, speed: float = 0.85) -> np.ndarray:
-    if not os.path.exists(_ARABIC_REF_AUDIO):
+def _load_arabic_ref_text() -> str:
+    """
+    Reference transcript for the Arabic F5 voice. Prefers the exact text file
+    at ARABIC_REF_TEXT_PATH (use prepare_ref_audio.py to diacritize it);
+    falls back to the built-in inline transcript.
+    """
+    global _ARABIC_REF_TEXT_CACHE
+    if _ARABIC_REF_TEXT_CACHE is not None:
+        return _ARABIC_REF_TEXT_CACHE
+    if os.path.exists(_ARABIC_REF_TEXT_PATH):
+        with open(_ARABIC_REF_TEXT_PATH, encoding="utf-8") as fh:
+            text = fh.read().strip()
+            if text:
+                _ARABIC_REF_TEXT_CACHE = text
+                return text
+    return _ARABIC_REF_TEXT
+
+
+def _validate_ref_audio(path: str) -> dict:
+    """
+    Checks the reference clip against the F5 best-practice spec
+    (5-10s, mono, >=24kHz). Warnings print once per process; never fatal.
+    """
+    global _REF_AUDIO_WARNED
+    info: dict = {"duration_s": None, "sample_rate": None, "channels": None, "warnings": []}
+    try:
+        meta = sf.info(path)
+        info["duration_s"] = round(meta.frames / float(meta.samplerate), 2)
+        info["sample_rate"] = meta.samplerate
+        info["channels"] = meta.channels
+    except Exception as exc:
+        info["warnings"].append(f"Could not inspect reference audio: {exc}")
+
+    duration = info["duration_s"]
+    if duration is not None and not (5.0 <= duration <= 10.0):
+        info["warnings"].append(
+            f"Reference audio is {duration}s; F5 style transfer works best with 5-10s. "
+            "Trim it with prepare_ref_audio.py."
+        )
+    if info["channels"] is not None and info["channels"] != 1:
+        info["warnings"].append(
+            f"Reference audio has {info['channels']} channels; mono is recommended."
+        )
+    if info["sample_rate"] is not None and info["sample_rate"] < 24000:
+        info["warnings"].append(
+            f"Reference audio is {info['sample_rate']}Hz; 24kHz+ is recommended."
+        )
+
+    if not _REF_AUDIO_WARNED:
+        for warning in info["warnings"]:
+            print(f"[Warning] Arabic F5 reference audio: {warning}")
+        _REF_AUDIO_WARNED = True
+    return info
+
+
+def _apply_arabic_preprocessing(text: str) -> str:
+    """
+    Normalizes + diacritizes Arabic text before F5 inference (reduces
+    hallucinations and mispronunciation). Soft-imports preprocess_arabic;
+    degrades gracefully (never raises) if the diacritizer is unavailable.
+    """
+    global _PREPROCESS_WARNED
+    if not text or not text.strip():
+        return text
+    try:
+        import preprocess_arabic
+    except ImportError:
+        if not _PREPROCESS_WARNED:
+            print("[Warning] preprocess_arabic.py not found; sending raw text to F5-TTS.")
+            _PREPROCESS_WARNED = True
+        return text
+
+    normalized = preprocess_arabic.normalize_arabic(text)
+    try:
+        return preprocess_arabic.diacritize(normalized)
+    except (ImportError, ValueError) as exc:
+        if not _PREPROCESS_WARNED:
+            print(f"[Warning] Arabic diacritization skipped: {exc}")
+            _PREPROCESS_WARNED = True
+        return normalized
+    except Exception as exc:
+        if not _PREPROCESS_WARNED:
+            print(f"[Warning] Arabic diacritization failed ({exc}); using normalized text.")
+            _PREPROCESS_WARNED = True
+        return normalized
+
+
+def _validate_f5_output(wav_array: np.ndarray) -> np.ndarray:
+    """Sanity-checks F5 output: non-empty, finite, and clip-safe."""
+    if wav_array.size == 0:
+        raise RuntimeError("F5-TTS returned an empty audio segment.")
+    if not np.isfinite(wav_array).all():
+        raise RuntimeError("F5-TTS returned non-finite audio samples (NaN/Inf).")
+    clipping_ratio = float(np.mean(np.abs(wav_array) >= 1.0))
+    if clipping_ratio > 0.001:
+        print(f"[Warning] F5-TTS output clipping on {clipping_ratio:.1%} of samples; clamping.")
+        wav_array = np.clip(wav_array, -1.0, 1.0)
+    return wav_array
+
+
+def generate_f5_audio(
+    text: str,
+    speed: float = 0.85,
+    *,
+    use_preprocessing: bool = True,
+    nfe_step: int | None = None,
+    cfg_strength: float | None = None,
+    sway_sampling_coef: float | None = None,
+    target_rms: float | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
+) -> np.ndarray:
+    ref_audio = ref_audio or _ARABIC_REF_AUDIO
+    if not os.path.exists(ref_audio):
         raise FileNotFoundError(
-            f"Arabic reference audio is required for SILMA/F5-TTS at '{_ARABIC_REF_AUDIO}'."
+            f"Arabic reference audio is required for SILMA/F5-TTS at '{ref_audio}'."
         )
 
     try:
@@ -126,6 +273,31 @@ def generate_f5_audio(text: str, speed: float = 0.85) -> np.ndarray:
         raise ImportError(
             "Arabic SILMA/F5-TTS requires 'f5-tts'. Install dependencies and retry."
         ) from exc
+
+    _validate_ref_audio(ref_audio)
+
+    # CRITICAL: the reference text must stay the EXACT transcript of the
+    # reference audio. F5-TTS relies on precise character-to-phoneme
+    # alignment with the ref clip; algorithmically altering it (e.g. guessed
+    # diacritics) breaks alignment and can collapse the output to noise.
+    # Diacritize the ref transcript OFFLINE (prepare_ref_audio.py) and
+    # manually verify it instead.
+    effective_ref_text = ref_text if ref_text is not None else _load_arabic_ref_text()
+    if use_preprocessing:
+        text = _apply_arabic_preprocessing(text)
+
+    # Explicit inference params beat env-configured module defaults.
+    tuning = {
+        "nfe_step": nfe_step if nfe_step is not None else _F5_NFE_STEP,
+        "cfg_strength": cfg_strength if cfg_strength is not None else _F5_CFG_STRENGTH,
+        "sway_sampling_coef": (
+            sway_sampling_coef if sway_sampling_coef is not None else _F5_SWAY_SAMPLING_COEF
+        ),
+        "target_rms": target_rms if target_rms is not None else _F5_TARGET_RMS,
+    }
+    # Only forward params supported by the installed f5-tts version.
+    supported = inspect.signature(infer_process).parameters
+    tuning = {k: v for k, v in tuning.items() if k in supported}
 
     model = _load_silma_model()
     vocoder = _load_silma_vocoder()
@@ -142,14 +314,15 @@ def generate_f5_audio(text: str, speed: float = 0.85) -> np.ndarray:
     infer_utils.torchaudio.load = _soundfile_audio_loader
     try:
         wav_tensor, sample_rate, _ = infer_process(
-            ref_audio=_ARABIC_REF_AUDIO,
-            ref_text=_ARABIC_REF_TEXT,
+            ref_audio=ref_audio,
+            ref_text=effective_ref_text,
             gen_text=text,
             model_obj=model,
             vocoder=vocoder,
             mel_spec_type="vocos",
             speed=speed,
             device=_F5_DEVICE,
+            **tuning,
         )
     finally:
         infer_utils.torchaudio.load = original_torchaudio_load
@@ -160,7 +333,53 @@ def generate_f5_audio(text: str, speed: float = 0.85) -> np.ndarray:
         wav_array = np.asarray(wav_tensor).squeeze()
 
     wav_array = wav_array.astype(np.float32)
+    wav_array = _validate_f5_output(wav_array)
     return _resample_linear(wav_array, int(sample_rate), 24000)
+
+
+def generate_fish_audio(text: str, speed: float = 0.85, vocal_tone: str = "Soft Spoken") -> np.ndarray:
+    """
+    Arabic ASMR via the Fish Audio API (model from FISH_AUDIO_MODEL,
+    default s2.1-pro-free) using S2 inline direction tags for delivery
+    control. Requests WAV (soundfile-decodable; no ffmpeg needed) and
+    returns 24kHz float32 mono samples, matching generate_f5_audio.
+    """
+    if not text or not text.strip():
+        raise ValueError("text must not be empty")
+    try:
+        from fish_arabic_asmr_test import FishAudioTTS
+    except ImportError as exc:
+        raise ImportError(
+            "Fish Audio backend requires fish_arabic_asmr_test.py and 'requests'."
+        ) from exc
+
+    # Defensive: convert any residual app pause markers to S2 pause tags
+    # (synthesize() normally splits them out before this point).
+    text = re.sub(
+        r"<<SILENCE(\d+)MS>>",
+        lambda m: "[break]" if int(m.group(1)) < 1500 else "[long-break]",
+        text,
+    )
+
+    # Inline delivery control: whisper vs soft-spoken opening cue.
+    prefix = "[whispering][soft tone] " if vocal_tone == "Whispering" else "[soft tone] "
+
+    client = FishAudioTTS()  # reads FISH_AUDIO_API_KEY / FISH_AUDIO_MODEL env
+    voice_id = os.getenv("FISH_AUDIO_VOICE_ID", "").strip() or None
+    result = client.synthesize(
+        text=prefix + text.strip(),
+        voice_id=voice_id,
+        fmt="wav",
+        speed=max(0.5, min(2.0, speed)),
+        sample_rate=44100,
+        name="app-arabic",
+    )
+
+    data, sample_rate = sf.read(io.BytesIO(result.audio_bytes), dtype="float32")
+    if data.ndim > 1:
+        data = np.mean(data, axis=1)
+    data = _validate_f5_output(data.astype(np.float32))
+    return _resample_linear(data, int(sample_rate), 24000)
 
 def create_tts_pipeline(lang_code="a"):
     """Initializes the Kokoro TTS pipeline into memory."""
@@ -226,7 +445,10 @@ def synthesize(pipeline, text: str, voices=None, speed=0.85, vocal_tone="Soft Sp
                 text_part = part.strip()
                 if text_part:
                     if is_arabic_voice:
-                        all_audio.append(generate_f5_audio(text_part, speed=speed))
+                        if _ARABIC_TTS_BACKEND == "fish":
+                            all_audio.append(generate_fish_audio(text_part, speed=speed, vocal_tone=vocal_tone))
+                        else:
+                            all_audio.append(generate_f5_audio(text_part, speed=speed))
                     else:
                         generator = pipeline(text_part, voice=current_voice, speed=speed, split_pattern=r"\n+")
                         for _, _, audio in generator:

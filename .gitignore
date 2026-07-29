@@ -22,6 +22,7 @@ asmr_sessions.log
 # Ignore all markdown by default, keep only the main project README
 *.md
 !README.md
+!finetuning/README.md
 
 # Ignore conversation and QA artifacts
 prompt_*_all_conversations.txt

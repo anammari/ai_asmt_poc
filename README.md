@@ -143,6 +143,96 @@ uv run python app.py
   - **💾 Browse & Save Audio Locally** opens the native save dialog and writes a WAV file at the path you choose.
   - A session log is written to `logs/asmr_session_<session_id>.log` including transcribed prompt, raw script, and sanitized script.
 
+## Arabic ASMR Quality Toolkit
+
+Optional tooling that improves the Arabic voice session (whisper delivery,
+pronunciation accuracy, hallucination control) and the Arabic transcript
+quality. All of it uses soft imports: the core app runs unchanged without
+them.
+
+### Optional dependencies
+
+```bash
+uv pip install f5-tts mishkal          # Arabic TTS engine + diacritizer
+# camel-tools is an alternative diacritizer: uv pip install camel-tools
+```
+
+### 1. Arabic text preprocessing (`preprocess_arabic.py`)
+
+Normalizes Arabic orthography (uniform Alifs, Ta Marbuta variants, tatweel
+and symbol cleanup) and fully diacritizes text (tashkeel) before F5-TTS
+inference — the main fix for mispronunciation and hallucinated words.
+`tts.py` applies it automatically to Arabic chunks; backend via
+`AR_DIACRITIZER` (`mishkal` default, `camel`, `none`). CLI:
+
+```bash
+python preprocess_arabic.py script.txt -o script_diacritized.txt
+```
+
+### 2. Reference audio preparation (`prepare_ref_audio.py`)
+
+F5-TTS transfers the whisper style strictly from the reference clip, and
+aligns it with the reference text character-by-character — so the clip must
+be 5-10s of clean whisper and the transcript must be **exact** (never
+algorithmically re-diacritized at inference time). This tool produces the
+required spec (mono, 24kHz, trimmed window, peak-normalized) and the
+matching exact transcript (Fish Audio tags stripped, sentence window
+selected, hamzated alefs and tashkeel preserved):
+
+```bash
+python prepare_ref_audio.py input/test_asmr_tn_3.mp3 --start 0 --duration 8.3 \
+    -o input/ref_asmr_tn_24k.wav --ref-text-file input/test_asmr_tn_3.txt \
+    --strip-tags --sentences 0-2 --no-diacritize
+```
+
+Then point `ARABIC_REF_AUDIO` / `ARABIC_REF_TEXT_PATH` at the outputs in `.env`
+and manually verify the transcript matches the spoken audio word-for-word.
+
+### 3. F5 inference tuning + before/after harness (`f5_asmr_inference.py`)
+
+Diffusion params are env-configurable (`F5_NFE_STEP`, `F5_CFG_STRENGTH`,
+`F5_SWAY_SAMPLING_COEF`, `F5_TARGET_RMS`). Compare legacy vs optimized
+pipelines, or run the evidence sweep — each combo is auto-checked for
+audible speech via whisper STT (`stt.verify_audible_speech`):
+
+```bash
+python f5_asmr_inference.py --mode compare
+# -> output/f5_baseline.wav, output/f5_optimized.wav, output/f5_comparison_log.md
+
+python f5_asmr_inference.py --sweep
+# -> output/f5_sweep_*.wav + output/f5_sweep_log.md with per-combo STT verdicts
+```
+
+Note: the sweep proved positive `F5_SWAY_SAMPLING_COEF` values destroy the
+Arabic output (near-silence) — keep `-1.0` unless a new sweep says otherwise.
+
+### 4. Fish Audio alternative backend (`fish_arabic_asmr_test.py`)
+
+Evaluate Fish Audio `s2.1-pro-free` for Arabic whispering TTS (inline
+`[whispering]` / `[soft tone]` / `[break]` tags, community ASMR voices,
+latency measurement):
+
+```bash
+# set FISH_AUDIO_API_KEY in .env first
+python fish_arabic_asmr_test.py
+# -> output/output_asmr_arabic.mp3 (+ per-case files), fish_audio_assessment.md
+```
+
+To use Fish Audio inside the app itself, set `ARABIC_TTS_BACKEND=fish`
+(optionally `FISH_AUDIO_VOICE_ID`) in `.env`. Default remains `silma`.
+
+### 5. Arabic transcript fine-tuning (`finetuning/`)
+
+Unsloth QLoRA fine-tune of an Arabic-capable instruct model on curated
+Arabic ASMR scripts, served back to the app via Ollama. Full developer
+action points: [`finetuning/README.md`](finetuning/README.md).
+
+```bash
+uv run python finetuning/build_dataset.py --count 60   # local, needs GEMINI_API_KEY
+# then train on Colab (T4), export GGUF, `ollama create arabic-asmr -f Modelfile`
+# and set LLM_PROVIDER=ollama + OLLAMA_MODEL=arabic-asmr:latest
+```
+
 ## Project Structure
 
 ```text
@@ -152,7 +242,12 @@ ai_asmr_poc/
 |- content_fetcher.py                # Fetches source context and handles fallback behavior.
 |- llm.py                            # Local Ollama rewrite client with endpoint fallback.
 |- stt.py                            # Whisper-based speech-to-text preprocessing and inference.
-|- tts.py                            # Kokoro/Edge TTS synthesis with silence marker support.
+|- tts.py                            # Kokoro/SILMA-F5/Fish TTS synthesis with silence marker support.
+|- preprocess_arabic.py              # Arabic normalization + diacritization (tashkeel) for F5-TTS.
+|- prepare_ref_audio.py              # Reference whisper clip prep (5-10s, mono, 24kHz) + transcript.
+|- f5_asmr_inference.py              # SILMA/F5 baseline-vs-optimized harness + comparison log.
+|- fish_arabic_asmr_test.py          # Fish Audio s2.1-pro-free Arabic ASMR evaluation harness.
+|- finetuning/                       # Unsloth Arabic ASMR SFT pipeline (see finetuning/README.md).
 |- Dockerfile                        # Container build with runtime dependencies.
 |- pyproject.toml                    # Python project metadata and dependencies.
 |- uv.lock                           # Locked dependency resolution for reproducible installs.
@@ -165,5 +260,8 @@ ai_asmr_poc/
    |- test_content_fetcher_smoke.py  # Validates context fetch fallback behavior.
    |- test_llm_smoke.py              # Validates local LLM endpoint fallback behavior.
    |- test_stt_smoke.py              # Validates audio transcription input handling.
-   `- test_tts_smoke.py              # Validates TTS API compatibility and synthesis path.
+   |- test_tts_smoke.py              # Validates TTS API compatibility and synthesis path.
+   |- test_f5_tuning_smoke.py        # Validates F5 env tuning, ref validation, preprocessing hook.
+   |- test_fish_tts_smoke.py         # Validates Fish Audio client, fallback, app routing.
+   `- test_preprocess_arabic_smoke.py # Validates Arabic normalization/diacritization behavior.
 ```

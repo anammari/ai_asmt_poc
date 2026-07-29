@@ -1,6 +1,7 @@
 # stt.py
 import io
 import re
+import difflib
 import soundfile as sf
 import numpy as np
 import os
@@ -94,3 +95,81 @@ def transcribe(pipeline, audio_input: bytes | dict[str, Any], language: str = "A
             return arabic_text
 
     return first_text
+
+
+def _normalize_for_compare(text: str) -> str:
+    """Comparison-normalizes Arabic text: no tashkeel, unified alefs, letters only."""
+    try:
+        import preprocess_arabic
+        text = preprocess_arabic.strip_diacritics(text)
+    except ImportError:
+        text = re.sub(r"[ً-ْٰ]", "", text)
+    text = re.sub(r"[أإآٱ]", "ا", text)
+    text = re.sub(r"[^ء-ي0-9a-zA-Z ]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def verify_audible_speech(
+    audio_input: bytes | dict[str, Any],
+    expected_text: str | None = None,
+    language: str = "arabic",
+    stt_pipeline=None,
+    min_rms: float = 0.005,
+    min_similarity: float = 0.3,
+) -> dict[str, Any]:
+    """
+    Verifies that generated audio actually contains audible human speech
+    (regression guard against "silent/noise-only" TTS outputs).
+
+    Primary signal: whisper transcription must yield non-empty text in the
+    expected language; when `expected_text` is given, the diacritics-stripped,
+    alef-unified character similarity must reach `min_similarity`
+    (lenient on purpose - whisper models transcribe whispered speech roughly).
+    Secondary signal: overall RMS energy above `min_rms` (not silence).
+
+    Returns a dict with: ok, rms, transcript, similarity, reason.
+    """
+    if isinstance(audio_input, (bytes, bytearray)):
+        with io.BytesIO(audio_input) as buf:
+            data, samplerate = sf.read(buf)
+        if len(data.shape) > 1:
+            data = np.mean(data, axis=1)
+        inputs: dict[str, Any] = {"array": data, "sampling_rate": samplerate}
+    elif isinstance(audio_input, dict):
+        inputs = audio_input
+        data = np.asarray(audio_input["array"], dtype=np.float32)
+    else:
+        raise TypeError("audio_input must be bytes/bytearray or a dict with array/sampling_rate")
+
+    rms = float(np.sqrt(np.mean(np.square(data)))) if len(data) else 0.0
+
+    if stt_pipeline is None:
+        stt_pipeline = create_stt_pipeline()
+    transcript = transcribe(stt_pipeline, inputs, language=language)
+    has_arabic = _contains_arabic_chars(transcript)
+
+    similarity = None
+    if expected_text is not None:
+        ref = _normalize_for_compare(expected_text)
+        hyp = _normalize_for_compare(transcript)
+        similarity = (
+            difflib.SequenceMatcher(None, ref, hyp).ratio() if ref and hyp else 0.0
+        )
+
+    reasons = []
+    if rms < min_rms:
+        reasons.append(f"rms {rms:.4f} < {min_rms} (near-silence)")
+    if not transcript:
+        reasons.append("empty transcript")
+    elif language.strip().lower() in {"arabic", "ar", "العربية"} and not has_arabic:
+        reasons.append("transcript contains no Arabic characters")
+    if expected_text is not None and (similarity or 0.0) < min_similarity:
+        reasons.append(f"similarity {similarity:.2f} < {min_similarity}")
+
+    return {
+        "ok": not reasons,
+        "rms": round(rms, 4),
+        "transcript": transcript,
+        "similarity": round(similarity, 3) if similarity is not None else None,
+        "reason": "; ".join(reasons) if reasons else "ok",
+    }
