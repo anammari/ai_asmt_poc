@@ -5,7 +5,7 @@ An automated AI-driven pipeline designed to fetch web content or direct topic pr
 ## Features
 
 - **Content Ingestion** (`content_fetcher.py`): Fetches raw text or web articles directly from URLs.
-- **LLM Script Rewriting** (`llm.py`): Rewrites source material into calm, rhythmic, whispered scripts with auditory markers (`[soft breath]`, `[whisper]`). Supports Google Gemini, OpenAI, or local Ollama models.
+- **LLM Script Rewriting** (`llm.py`): Rewrites source material into calm, rhythmic, whispered scripts with auditory markers (`[soft breath]`, `[whisper]`). Supports Google Gemini or local Ollama models.
 - **Whisper Audio Synthesis** (`tts.py`): Synthesizes whisper-toned `.wav`/`.mp3` audio files using Kokoro-82M or Edge-TTS.
 - **Audio Processing** (`stt.py`): Transcribes audio inputs using Whisper for voice-guided feeds.
 
@@ -44,11 +44,9 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 ## Option 1: Running with Docker (Recommended)
 
-Docker packages all system dependencies (`espeak-ng`, `ffmpeg`, Python 3.12) and bakes the Kokoro-82M model weights into the image during build time.
+Docker packages all system dependencies (`espeak-ng`, `ffmpeg`, Python 3.12).
 
 ### 1. Build the Docker image
-
-This step executes `python tts.py --preload` during the build step to cache Kokoro-82M model weights in the container layer:
 
 ```bash
 docker build -t ai-asmr-poc .
@@ -95,7 +93,7 @@ uv sync
 You can optionally pre-download the Kokoro-82M model assets to your Hugging Face cache prior to running the app:
 
 ```bash
-uv run python tts.py --preload
+uv run python -c "from tts import create_tts_pipeline; create_tts_pipeline()"
 ```
 
 ### 4. Run application
@@ -104,9 +102,9 @@ uv run python tts.py --preload
 uv run python app.py
 ```
 
-## Test Case: Rain Whisper Session
+## Test Case: Rain Whisper Session (English)
 
-Use the following prompt to validate an end-to-end run:
+Use the following prompt to validate an end-to-end English run:
 
 ```text
 Explain the soothing sound of gentle rain falling on a window and a show relaxing whisper.
@@ -122,9 +120,8 @@ uv run python app.py
 
 2. In the UI:
   - (Optional) Add URL context in **Source URL Context (Optional)**.
-  - Set **Script Language**:
-    - **English**: record instructions in **Voice Prompt (Instruct the ASMR topic & style)**.
-    - **Arabic (العربية)**: enter instructions in **Arabic Written Prompt (النص العربي)** (voice input is not used).
+  - Set **Script Language** to **English**.
+  - Record instructions in **Voice Prompt (Instruct the ASMR topic & style)**.
   - (Optional) Fill **Optional: About You (Name, age, work, hobbies, etc.)**, for example:
     `My name is John. I have two children and I often read them bedtime stories.`
   - Select at least **2 voices** in **Select Voice(s) (Will alternate per paragraph)** to validate voice alternation.
@@ -132,94 +129,64 @@ uv run python app.py
   - Set **Target Duration (Minutes)** to **3**.
   - Click **✨ Generate New ASMR**.
 
-3. Verify expected behavior (new features):
-  - The app shows **Transcribed Instructions** for English voice input, and **Arabic Written Instructions** when Arabic text mode is selected.
+3. Verify expected behavior:
+  - The app shows **Transcribed Instructions** based on your voice recording.
   - The generated script is sanitized before synthesis (formatting artifacts removed, pause tags converted to `<<SILENCE...MS>>` markers).
   - If Gemini returns transient 429/500/503 errors, generation uses exponential backoff retries, then tries fallback Gemini models, then falls back to Ollama (or local minimal fallback if Ollama is unavailable).
   - **View TTS-Ready Script** displays human-readable silence hints like *(Silence: 3000 ms)*.
   - Output audio plays in-app and includes real silent gaps where pause markers exist.
   - Multi-voice selection alternates voices across script paragraphs.
   - **🔄 Re-Synthesize (Use Existing Script)** regenerates audio from the cached sanitized script without re-calling the LLM.
-  - **💾 Browse & Save Audio Locally** opens the native save dialog and writes a WAV file at the path you choose.
   - A session log is written to `logs/asmr_session_<session_id>.log` including transcribed prompt, raw script, and sanitized script.
 
-## Arabic ASMR Quality Toolkit
+## Test Case: جلسة المطر الهادئ (Arabic Rain Session)
 
-Optional tooling that improves the Arabic voice session (whisper delivery,
-pronunciation accuracy, hallucination control) and the Arabic transcript
-quality. All of it uses soft imports: the core app runs unchanged without
-them.
+Use the following prompt to validate an end-to-end Arabic run:
 
-### Optional dependencies
-
-```bash
-uv pip install f5-tts mishkal          # Arabic TTS engine + diacritizer
-# camel-tools is an alternative diacritizer: uv pip install camel-tools
+```text
+صِف لي صوتاً هادئاً للمطر يلمس النافذة ببطء، وارسم لي مشهداً من الهدوء والسكينة لكي أنام
 ```
 
-### 1. Arabic text preprocessing (`preprocess_arabic.py`)
+### Manual test steps
 
-Normalizes Arabic orthography (uniform Alifs, Ta Marbuta variants, tatweel
-and symbol cleanup) and fully diacritizes text (tashkeel) before F5-TTS
-inference — the main fix for mispronunciation and hallucinated words.
-`tts.py` applies it automatically to Arabic chunks; backend via
-`AR_DIACRITIZER` (`mishkal` default, `camel`, `none`). CLI:
+1. Start the app:
 
 ```bash
-python preprocess_arabic.py script.txt -o script_diacritized.txt
+uv run python app.py
 ```
 
-### 2. Reference audio preparation (`prepare_ref_audio.py`)
+2. In the UI:
+  - (Optional) Add URL context in **Source URL Context (Optional)**.
+  - Set **Script Language** to **Arabic (العربية)**.
+  - Enter the Arabic prompt above in **Arabic Written Prompt (النص العربي)** (voice input is not used).
+  - (Optional) Fill **Optional: About You (Name, age, work, hobbies, etc.)** for personalized delivery.
+  - For **Vocal Tone Preference**, select **Whispering** (shows ASMR 1 & ASMR 2 voices) or **Soft Spoken** (shows ASMR 3 & ASMR 4 voices).
+  - Select one or more voices from the available Arabic voice list; voices alternate per paragraph.
+  - Set **Target Duration (Minutes)** to **3**.
+  - Click **✨ Generate New ASMR**.
 
-F5-TTS transfers the whisper style strictly from the reference clip, and
-aligns it with the reference text character-by-character — so the clip must
-be 5-10s of clean whisper and the transcript must be **exact** (never
-algorithmically re-diacritized at inference time). This tool produces the
-required spec (mono, 24kHz, trimmed window, peak-normalized) and the
-matching exact transcript (Fish Audio tags stripped, sentence window
-selected, hamzated alefs and tashkeel preserved):
+3. Verify expected behavior:
+  - The app shows **Arabic Written Instructions** with your input text.
+  - The generated script is in fluent Arabic with 4-6 paragraphs separated by blank lines and varied pause durations (`[pause]`, `[pause:2s]`, `[pause:3s]`, `[pause:4s]`).
+  - **View TTS-Ready Script** displays human-readable silence hints.
+  - Output audio is a clear Arabic whispered or soft-spoken ASMR track with no hallucinated words.
+  - Multi-voice selection alternates voices across paragraphs.
+  - **🔄 Re-Synthesize (Use Existing Script)** regenerates audio without re-calling the LLM.
+  - A session log is written to `logs/asmr_session_<session_id>.log`.
 
-```bash
-python prepare_ref_audio.py input/test_asmr_tn_3.mp3 --start 0 --duration 8.3 \
-    -o input/ref_asmr_tn_24k.wav --ref-text-file input/test_asmr_tn_3.txt \
-    --strip-tags --sentences 0-2 --no-diacritize
-```
+## Arabic ASMR Toolkit
 
-Then point `ARABIC_REF_AUDIO` / `ARABIC_REF_TEXT_PATH` at the outputs in `.env`
-and manually verify the transcript matches the spoken audio word-for-word.
+### 1. Fish Audio TTS backend (`fish_audio_tts.py`)
 
-### 3. F5 inference tuning + before/after harness (`f5_asmr_inference.py`)
-
-Diffusion params are env-configurable (`F5_NFE_STEP`, `F5_CFG_STRENGTH`,
-`F5_SWAY_SAMPLING_COEF`, `F5_TARGET_RMS`). Compare legacy vs optimized
-pipelines, or run the evidence sweep — each combo is auto-checked for
-audible speech via whisper STT (`stt.verify_audible_speech`):
-
-```bash
-python f5_asmr_inference.py --mode compare
-# -> output/f5_baseline.wav, output/f5_optimized.wav, output/f5_comparison_log.md
-
-python f5_asmr_inference.py --sweep
-# -> output/f5_sweep_*.wav + output/f5_sweep_log.md with per-combo STT verdicts
-```
-
-Note: the sweep proved positive `F5_SWAY_SAMPLING_COEF` values destroy the
-Arabic output (near-silence) — keep `-1.0` unless a new sweep says otherwise.
-
-### 4. Fish Audio alternative backend (`fish_arabic_asmr_test.py`)
-
-Evaluate Fish Audio `s2.1-pro-free` for Arabic whispering TTS (inline
-`[whispering]` / `[soft tone]` / `[break]` tags, community ASMR voices,
-latency measurement):
+The sole Arabic TTS backend. Uses Fish Audio `s2.1-pro-free` with inline
+S2 direction tags (`[whispering]`, `[soft]`, `[break]`). The app provides
+4 community ASMR voices filtered by vocal tone. Evaluate it standalone:
 
 ```bash
 # set FISH_AUDIO_API_KEY in .env first
-python fish_arabic_asmr_test.py
-# -> output/output_asmr_arabic.mp3 (+ per-case files), fish_audio_assessment.md
+python fish_audio_tts.py
+# -> output/output_asmr_arabic.mp3 (+ per-case files), output/fish_audio_assessment.md
 ```
-
-To use Fish Audio inside the app itself, set `ARABIC_TTS_BACKEND=fish`
-(optionally `FISH_AUDIO_VOICE_ID`) in `.env`. Default remains `silma`.
 
 ### 5. Arabic transcript fine-tuning (`finetuning/`)
 
@@ -242,11 +209,9 @@ ai_asmr_poc/
 |- content_fetcher.py                # Fetches source context and handles fallback behavior.
 |- llm.py                            # Local Ollama rewrite client with endpoint fallback.
 |- stt.py                            # Whisper-based speech-to-text preprocessing and inference.
-|- tts.py                            # Kokoro/SILMA-F5/Fish TTS synthesis with silence marker support.
-|- preprocess_arabic.py              # Arabic normalization + diacritization (tashkeel) for F5-TTS.
-|- prepare_ref_audio.py              # Reference whisper clip prep (5-10s, mono, 24kHz) + transcript.
-|- f5_asmr_inference.py              # SILMA/F5 baseline-vs-optimized harness + comparison log.
-|- fish_arabic_asmr_test.py          # Fish Audio s2.1-pro-free Arabic ASMR evaluation harness.
+|- tts.py                            # Kokoro + Fish Audio TTS synthesis with silence marker support.
+|- preprocess_arabic.py              # Arabic normalization + diacritization (tashkeel).
+|- fish_audio_tts.py                 # Fish Audio s2.1-pro-free Arabic ASMR TTS client.
 |- finetuning/                       # Unsloth Arabic ASMR SFT pipeline (see finetuning/README.md).
 |- Dockerfile                        # Container build with runtime dependencies.
 |- pyproject.toml                    # Python project metadata and dependencies.
@@ -261,7 +226,6 @@ ai_asmr_poc/
    |- test_llm_smoke.py              # Validates local LLM endpoint fallback behavior.
    |- test_stt_smoke.py              # Validates audio transcription input handling.
    |- test_tts_smoke.py              # Validates TTS API compatibility and synthesis path.
-   |- test_f5_tuning_smoke.py        # Validates F5 env tuning, ref validation, preprocessing hook.
    |- test_fish_tts_smoke.py         # Validates Fish Audio client, fallback, app routing.
    `- test_preprocess_arabic_smoke.py # Validates Arabic normalization/diacritization behavior.
 ```

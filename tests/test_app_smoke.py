@@ -49,9 +49,20 @@ class TestAppSmoke(unittest.TestCase):
         self.assertEqual(text, "spoken text")
         mock_transcribe.assert_called_once_with("pipe", b"audio-bytes", language="English")
 
-    def test_get_available_voices_for_arabic_only_includes_ahmad(self):
+    def test_get_available_voices_for_arabic_whispering(self):
+        voices = app.get_available_voices("Arabic (العربية)", "Whispering")
+        self.assertIn("ASMR 1 (Arabic Female)", voices)
+        self.assertIn("ASMR 2 (Arabic Female)", voices)
+        self.assertNotIn("ASMR 3 (Arabic Female)", voices)
+        self.assertNotIn("ASMR 4 (Arabic Female)", voices)
+        self.assertTrue(all(v.startswith("fish_") for v in voices.values()))
+
+    def test_get_available_voices_for_arabic_soft_spoken(self):
         voices = app.get_available_voices("Arabic (العربية)", "Soft Spoken")
-        self.assertEqual(voices, {"Ahmad (Arabic Male) - SILMA/F5-TTS": "ar_ahmad"})
+        self.assertIn("ASMR 3 (Arabic Female)", voices)
+        self.assertIn("ASMR 4 (Arabic Female)", voices)
+        self.assertNotIn("ASMR 1 (Arabic Female)", voices)
+        self.assertNotIn("ASMR 2 (Arabic Female)", voices)
 
     def test_get_available_voices_for_english_keeps_tone_filter(self):
         voices = app.get_available_voices("English", "Whispering")

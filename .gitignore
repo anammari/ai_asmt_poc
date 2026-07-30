@@ -17,6 +17,7 @@ logs/
 output/
 input/
 err.log
+out.log
 asmr_sessions.log
 
 # Ignore all markdown by default, keep only the main project README

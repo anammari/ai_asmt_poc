@@ -1,4 +1,4 @@
-# fish_arabic_asmr_test.py
+# fish_audio_tts.py
 """
 Fish Audio (s2.1-pro-free) evaluation harness for Arabic whispering/ASMR TTS.
 
@@ -19,9 +19,9 @@ Outputs:
 Auth: set FISH_AUDIO_API_KEY in your environment or .env.
 
 Usage:
-  python fish_arabic_asmr_test.py                      # run all built-in cases
-  python fish_arabic_asmr_test.py --case inline_tags_whisper
-  python fish_arabic_asmr_test.py --text "[whispering] مرحباً بالعالم" --format wav
+  python fish_audio_tts.py                              # run all built-in cases
+  python fish_audio_tts.py --case inline_tags_whisper
+  python fish_audio_tts.py --text "[whispering] مرحباً بالعالم" --format wav
 
 Docs: https://docs.fish.audio/features/text-to-speech
 """
@@ -313,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--speed", type=float, default=1.0,
                         help="Prosody speed 0.5-2.0 (default: 1.0).")
     parser.add_argument("--output-dir", default="output")
-    parser.add_argument("--report", default="fish_audio_assessment.md")
+    parser.add_argument("--report", default="output/fish_audio_assessment.md")
     args = parser.parse_args(argv)
 
     if args.text:

@@ -206,6 +206,53 @@ class TestLlmSmoke(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 llm.rewrite_script(context_text="rain", user_prompt="calm rain", provider="gemini")
 
+    def test_arabic_forces_gemini_provider(self):
+        with patch("llm._call_gemini", return_value="gemini script") as mock_gemini, \
+             patch("llm._call_ollama") as mock_ollama:
+            out = llm.rewrite_script(
+                context_text="",
+                user_prompt="صوت المطر",
+                provider="ollama",
+                language="Arabic (العربية)",
+            )
+        mock_gemini.assert_called_once()
+        mock_ollama.assert_not_called()
+        self.assertEqual(out, "gemini script")
+
+    def test_english_respects_ollama_provider(self):
+        with patch("llm._call_gemini") as mock_gemini, \
+             patch("llm._call_ollama", return_value="ollama script") as mock_ollama:
+            out = llm.rewrite_script(
+                context_text="",
+                user_prompt="rain sounds",
+                provider="ollama",
+                language="English",
+            )
+        mock_ollama.assert_called_once()
+        mock_gemini.assert_not_called()
+        self.assertEqual(out, "ollama script")
+
+    def test_arabic_prompt_has_structure_rules(self):
+        with patch("llm._call_gemini", return_value="ok") as mock_gemini:
+            llm.rewrite_script(
+                context_text="",
+                user_prompt="test",
+                provider="gemini",
+                language="Arabic (العربية)",
+            )
+        args, _ = mock_gemini.call_args
+        system_msg = args[0]
+        self.assertIn("4-6 paragraphs", system_msg)
+        self.assertIn("VARY PAUSE DURATIONS", system_msg)
+        self.assertIn("[pause:2s]", system_msg)
+        self.assertIn("[pause:3s]", system_msg)
+        self.assertIn("[pause:4s]", system_msg)
+
+    def test_call_openai_raises_not_implemented(self):
+        with self.assertRaises(NotImplementedError) as ctx:
+            llm._call_openai("sys", "user")
+        self.assertIn("LLM_PROVIDER=gemini", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

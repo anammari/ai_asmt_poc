@@ -84,12 +84,21 @@ ENGLISH_VOICE_CATEGORIES = {
     },
 }
 
-ARABIC_AHMAD_VOICE = {"Ahmad (Arabic Male) - SILMA/F5-TTS": "ar_ahmad"}
+ARABIC_VOICES = {
+    "Whispering": {
+        "ASMR 1 (Arabic Female)": "fish_0de68eaa0cc5438389b82bba728c8e39",
+        "ASMR 2 (Arabic Female)": "fish_2689bc84ab944610af10bf64e586684a",
+    },
+    "Soft Spoken": {
+        "ASMR 3 (Arabic Female)": "fish_7eee0787bf1a476fb0864270853e344a",
+        "ASMR 4 (Arabic Female)": "fish_4ac8915eb1e04bb5a46d1e1889222f75",
+    },
+}
 
 
 def get_available_voices(selected_language: str, vocal_tone: str) -> dict[str, str]:
     if selected_language.startswith("Arabic"):
-        return ARABIC_AHMAD_VOICE
+        return ARABIC_VOICES.get(vocal_tone, ARABIC_VOICES["Whispering"])
     return ENGLISH_VOICE_CATEGORIES[vocal_tone]
 
 

@@ -162,48 +162,58 @@ def rewrite_script(
     language: str = "English",
 ) -> str:
     provider = provider or os.getenv("LLM_PROVIDER", "ollama")
-    
-    target_word_count = target_minutes * 85 
-    
-    # Base configuration for ASMR writing
+    is_arabic = "arabic" in language.strip().lower()
+    target_word_count = target_minutes * 85
+
     system_msg = (
         "You are an expert ASMR scriptwriter generating scripts for an automated text-to-speech engine.\n"
-        f"Your goal is to write a script that takes exactly {target_minutes} minutes to speak slowly (strictly aim for ~{target_word_count} words).\n"
+        f"Your goal is write a script that takes exactly {target_minutes} minutes to speak slowly (strictly aim for ~{target_word_count} words).\n"
         f"The REQUIRED vocal tone is: {vocal_tone.upper()}.\n"
         f"Language rule: Write the spoken script in {language} only.\n"
     )
-    
+
     if vocal_tone == "Whispering":
         system_msg += "Write using words that emphasize sibilance (s, sh, f, th, h) and highly intimate, breathy pacing.\n"
-        
+
     system_msg += (
         "CRITICAL RULES:\n"
         "1. ONLY output the spoken script. NO titles, NO introductions, NO concluding remarks.\n"
         "2. NO meta-text, NO asterisks, NO markdown formatting (like **bold** or *italics*). Do NOT use quotes.\n"
         "3. Insert [pause] or [pause:2s] (or up to [pause:4s]) frequently to dictate pacing.\n"
-        # Fix 3: Strict ban on elongated onomatopoeias that TTS misinterprets as acronyms
-        "4. NEVER use elongated words like 'shhhhh', 'sssss', or 'hmmmm'. The TTS engine will spell them out letter-by-letter. Use standard English words only.\n"
-        # Improvement 2: Strict enforcement of relevance
+        "4. NEVER use elongated words like 'shhhhh', 'sssss', or 'hmmmm'. The TTS engine will spell them out letter-by-letter. Use standard words only.\n"
         "5. You MUST stay strictly relevant to the provided Background Context and User Instructions.\n"
     )
-    
-    # Improvement 1: Incorporate Personal Info for targeted ASMR attention
+
+    if is_arabic:
+        system_msg += (
+            "6. STRUCTURE: Divide the script into 4-6 paragraphs separated by blank lines. "
+            "Each paragraph should be 2-3 sentences.\n"
+            "7. VARY PAUSE DURATIONS: Use [pause], [pause:2s], [pause:3s], and [pause:4s] "
+            "throughout — not just the default [pause]. This creates natural pacing.\n"
+        )
+
     if user_info.strip():
-        system_msg += "6. Personal Attention: You have been provided with the User's Personal Info. You MUST seamlessly and naturally weave these details (like their name, age, or hobbies) into the ASMR script to provide a deeply personal, comforting experience.\n"
-    
-    # Constructing the user prompt payload
+        rule_num = "8" if is_arabic else "6"
+        system_msg += f"{rule_num}. Personal Attention: You have been provided with the User's Personal Info. You MUST seamlessly and naturally weave these details (like their name, age, or hobbies) into the ASMR script to provide a deeply personal, comforting experience.\n"
+
     user_msg = f"User Instructions / Topic: {user_prompt if user_prompt else 'Create a general relaxing experience.'}\n\n"
-    
+
     if user_info.strip():
         user_msg += f"User's Personal Info for Personal Attention:\n{user_info.strip()}\n\n"
-        
+
     if context_text.strip():
         user_msg += f"Background Context Information:\n{context_text.strip()}"
-        
+
+    if is_arabic:
+        provider = "gemini"
+
     if provider == "ollama":
         return _call_ollama(system_msg, user_msg)
     elif provider == "openai":
-        return _call_openai(system_msg, user_msg)
+        try:
+            return _call_openai(system_msg, user_msg)
+        except NotImplementedError:
+            raise
     elif provider == "gemini":
         try:
             return _call_gemini(system_msg, user_msg)
@@ -249,7 +259,10 @@ def _call_ollama(system_msg: str, user_msg: str) -> str:
     raise RuntimeError(f"Ollama LLM call failed on all endpoints. Last error: {last_err}. Check if model '{model}' is pulled.")
 
 def _call_openai(system_msg: str, user_msg: str) -> str:
-    return "OpenAI routing placeholder."
+    raise NotImplementedError(
+        "OpenAI provider is not yet implemented. "
+        "Set LLM_PROVIDER=gemini or LLM_PROVIDER=ollama in .env."
+    )
 
 def _call_gemini(system_msg: str, user_msg: str) -> str:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()

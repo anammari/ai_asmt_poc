@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 
 import tts
-from fish_arabic_asmr_test import FishAudioError, FishAudioTTS
+from fish_audio_tts import FishAudioError, FishAudioTTS
 
 
 class _FakeResponse:
@@ -46,7 +46,7 @@ class TestFishAudioTTSClient(unittest.TestCase):
             captured.update(url=url, json=json, headers=headers, stream=stream)
             return _FakeResponse(200, chunks=[b"chunk1", b"chunk2"])
 
-        with patch("fish_arabic_asmr_test.requests.post", side_effect=fake_post):
+        with patch("fish_audio_tts.requests.post", side_effect=fake_post):
             result = FishAudioTTS(api_key="k", model="s2.1-pro-free").synthesize(
                 "[whispering] مرحبا بالعالم",
                 voice_id="voice-123",
@@ -76,7 +76,7 @@ class TestFishAudioTTSClient(unittest.TestCase):
                 return _FakeResponse(404, text="voice not found")
             return _FakeResponse(200)
 
-        with patch("fish_arabic_asmr_test.requests.post", side_effect=fake_post):
+        with patch("fish_audio_tts.requests.post", side_effect=fake_post):
             result = FishAudioTTS(api_key="k").synthesize("مرحبا", voice_id="bad-voice")
 
         self.assertEqual(len(calls), 2)
@@ -95,8 +95,8 @@ class TestFishAudioTTSClient(unittest.TestCase):
             calls.append(1)
             return responses[len(calls) - 1]
 
-        with patch("fish_arabic_asmr_test.requests.post", side_effect=fake_post), \
-             patch("fish_arabic_asmr_test.time.sleep") as mock_sleep:
+        with patch("fish_audio_tts.requests.post", side_effect=fake_post), \
+             patch("fish_audio_tts.time.sleep") as mock_sleep:
             result = FishAudioTTS(api_key="k").synthesize("مرحبا")
 
         self.assertEqual(len(calls), 3)
@@ -110,7 +110,7 @@ class TestFishAudioTTSClient(unittest.TestCase):
             calls.append(1)
             return _FakeResponse(401, text="invalid api key")
 
-        with patch("fish_arabic_asmr_test.requests.post", side_effect=fake_post):
+        with patch("fish_audio_tts.requests.post", side_effect=fake_post):
             with self.assertRaises(FishAudioError) as ctx:
                 FishAudioTTS(api_key="bad").synthesize("مرحبا")
 
@@ -120,28 +120,37 @@ class TestFishAudioTTSClient(unittest.TestCase):
     def test_network_error_exhausts_retries(self):
         import requests as real_requests
 
-        with patch("fish_arabic_asmr_test.requests.post",
+        with patch("fish_audio_tts.requests.post",
                    side_effect=real_requests.ConnectionError("down")), \
-             patch("fish_arabic_asmr_test.time.sleep"):
+             patch("fish_audio_tts.time.sleep"):
             with self.assertRaises(FishAudioError) as ctx:
                 FishAudioTTS(api_key="k", max_retries=2).synthesize("مرحبا")
         self.assertIn("network error", str(ctx.exception))
 
 
 class TestFishBackendInApp(unittest.TestCase):
-    def test_synthesize_routes_arabic_voice_to_fish_when_enabled(self):
-        with patch.object(tts, "_ARABIC_TTS_BACKEND", "fish"), \
-             patch("tts.generate_fish_audio",
-                   return_value=np.zeros(24000, dtype=np.float32)) as mock_fish, \
-             patch("tts.generate_f5_audio") as mock_f5:
-            out = tts.synthesize(pipeline=None, text="مرحباً بكم", voices=["ar_ahmad"])
+    def test_synthesize_routes_arabic_voice_to_fish(self):
+        with patch("tts.generate_fish_audio",
+                   return_value=np.zeros(24000, dtype=np.float32)) as mock_fish:
+            out = tts.synthesize(pipeline=None, text="مرحباً بكم", voices=["fish_0de68eaa0cc5438389b82bba728c8e39"])
 
         mock_fish.assert_called_once()
-        mock_f5.assert_not_called()
         self.assertTrue(out.startswith(b"RIFF"))
 
-    def test_synthesize_defaults_to_silma_backend(self):
-        self.assertEqual(tts._ARABIC_TTS_BACKEND, "silma")
+    def test_synthesize_passes_voice_id_to_fish(self):
+        captured = {}
+
+        def fake_fish(text, speed=0.85, vocal_tone="Soft Spoken", voice_id=None):
+            captured["voice_id"] = voice_id
+            return np.zeros(24000, dtype=np.float32)
+
+        with patch("tts.generate_fish_audio", side_effect=fake_fish):
+            tts.synthesize(
+                pipeline=None, text="مرحباً",
+                voices=["fish_abc123voice"],
+            )
+
+        self.assertEqual(captured["voice_id"], "abc123voice")
 
     def test_generate_fish_audio_decodes_wav_and_rewrites_markers(self):
         captured = {}
@@ -153,7 +162,7 @@ class TestFishBackendInApp(unittest.TestCase):
         env = {"FISH_AUDIO_API_KEY": "k", "FISH_AUDIO_MODEL": "s2.1-pro-free",
                "FISH_AUDIO_VOICE_ID": ""}
         with patch.dict(os.environ, env, clear=False), \
-             patch("fish_arabic_asmr_test.requests.post", side_effect=fake_post):
+             patch("fish_audio_tts.requests.post", side_effect=fake_post):
             wav = tts.generate_fish_audio(
                 "مرحباً بك <<SILENCE2000MS>> استمع بهدوء",
                 speed=0.85,
@@ -164,7 +173,7 @@ class TestFishBackendInApp(unittest.TestCase):
         text_sent = captured["json"]["text"]
         self.assertIn("[long-break]", text_sent)
         self.assertNotIn("<<SILENCE", text_sent)
-        self.assertTrue(text_sent.startswith("[whispering][soft tone] "))
+        self.assertTrue(text_sent.startswith("[whispering] "))
         self.assertEqual(captured["json"]["format"], "wav")
         self.assertEqual(captured["json"]["sample_rate"], 44100)
 
@@ -181,10 +190,10 @@ class TestFishBackendInApp(unittest.TestCase):
             return _FakeResponse(200, chunks=[_wav_bytes(sr=44100, seconds=0.05)])
 
         with patch.dict(os.environ, {"FISH_AUDIO_API_KEY": "k"}, clear=False), \
-             patch("fish_arabic_asmr_test.requests.post", side_effect=fake_post):
+             patch("fish_audio_tts.requests.post", side_effect=fake_post):
             tts.generate_fish_audio("مرحبا", vocal_tone="Soft Spoken")
 
-        self.assertTrue(captured["json"]["text"].startswith("[soft tone] "))
+        self.assertTrue(captured["json"]["text"].startswith("[soft] "))
 
 
 if __name__ == "__main__":

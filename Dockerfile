@@ -33,9 +33,9 @@ COPY . .
 
 # =========================================================
 # BUILD-TIME MODEL PRE-LOADING
-# Bakes ~327MB Kokoro-82M model weights directly into Docker image
+# Bakes Kokoro-82M model weights directly into Docker image
 # =========================================================
-RUN uv run python tts.py --preload
+RUN uv run python -c "from tts import create_tts_pipeline; create_tts_pipeline()"
 
 # Ensure output directory exists for exported audio files
 RUN mkdir -p /app/output
