@@ -39,3 +39,5 @@ finetuning/tests/__pycache__/
 # Ingested I/O data (downloaded transcripts, built datasets)
 finetuning/data/ingested/
 finetuning/data/training/
+# Legacy synthetic dataset (superseded by YouTube ingestion pipeline)
+finetuning/data/arabic_asmr_sft.jsonl
