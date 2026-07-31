@@ -266,6 +266,18 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional Netscape-format cookie file to pass to yt-dlp.",
     )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        default=True,
+        help="Skip rows whose output file already exists (default: True).",
+    )
+    parser.add_argument(
+        "--no-skip-existing",
+        action="store_true",
+        dest="force_no_skip",
+        help="Re-fetch all videos even if output already exists.",
+    )
     args = parser.parse_args(argv)
 
     if not os.path.exists(args.metadata_csv):
@@ -287,6 +299,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[skip {i+1}] missing URL for dialect {dialect}")
             skipped += 1
             continue
+
+        video_id = _video_id(url)
+        if not video_id:
+            print(f"[skip {i+1}] could not parse video ID from URL")
+            skipped += 1
+            continue
+
+        # Check if already ingested when --skip-existing is active.
+        if args.skip_existing and not args.force_no_skip:
+            out_dir = os.path.join(args.output_root, dialect)
+            if os.path.isdir(out_dir):
+                existing = [f for f in os.listdir(out_dir) if f.endswith(f"_{video_id}.json")]
+                if existing:
+                    print(f"[skip {i+1}] {video_id} already ingested, skipping")
+                    continue
 
         try:
             data = fetch_video_data(url, cookiefile=args.cookies)

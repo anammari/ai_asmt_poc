@@ -87,62 +87,129 @@ uv run python finetuning/build_dataset.py --dialect syria \
     --out finetuning/data/training/syria/arabic_asmr_sft.jsonl
 ```
 
-### 3. Train on Google Colab
+### 3. Upload prepared data to Google Drive
 
-Upload `finetuning/data/training/<dialect>/arabic_asmr_sft.jsonl`
-and `finetuning/train_unsloth_sft.py` to Colab.
-Set Runtime → Change runtime type → T4 GPU.
+Before training on Colab, copy the prepared dataset to Google Drive so it
+persists between Colab sessions:
 
-Install dependencies:
+```bash
+# From your local machine, upload the training data and script to Drive.
+# Option A — use the Google Drive web UI:
+#   1. Open drive.google.com
+#   2. Create folder: arabic-asmr/syria/
+#   3. Upload finetuning/data/training/syria/arabic_asmr_sft.jsonl into it
+#   4. Upload finetuning/train_unsloth_sft.py into arabic-asmr/
+#
+# Option B — use rclone (if your Drive is synced locally):
+cp finetuning/data/training/syria/arabic_asmr_sft.jsonl ~/GoogleDrive/arabic-asmr/syria/
+cp finetuning/train_unsloth_sft.py ~/GoogleDrive/arabic-asmr/
+```
+
+You only need to upload the JSONL file and the training script. The ingestion
+and dataset builder run on your Mac, not on Colab.
+
+### 4. Train on Google Colab
+
+**Step 4a — start a Colab notebook:**
+
+1. Go to https://colab.research.google.com/
+2. Runtime → Change runtime type → T4 GPU
+3. Create a new notebook
+
+**Step 4b — mount Google Drive and set up the environment:**
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
 
 ```python
 !pip install -q unsloth trl datasets
 ```
 
-Train:
+**Step 4c — train with the dataset on Drive:**
 
 ```python
-# Syrian dialect
-!python train_unsloth_sft.py --dialect syria --epochs 2
+# Syrian dialect — dataset and outputs live on Drive
+!python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
+    --dialect syria \
+    --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \
+    --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \
+    --epochs 2
 
-# Egyptian dialect
-!python train_unsloth_sft.py --dialect egypt --epochs 2
+# Egyptian dialect (once you have Egyptian data)
+!python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
+    --dialect egypt \
+    --dataset /content/drive/MyDrive/arabic-asmr/egypt/arabic_asmr_sft.jsonl \
+    --output-dir /content/drive/MyDrive/arabic-asmr/outputs/egypt \
+    --epochs 2
 ```
+
+**Why Google Drive is important:**
+| Without Drive (Files panel) | With Drive (mount) |
+|---|---|
+| Data lost on session disconnect | Data persists forever |
+| Cannot resume after timeout | Checkpoints survive for resume |
+| Must re-upload every time | Upload once, train many times |
+| Outputs lost if session dies | GGUF + adapter survive for download |
 
 Default base model: `unsloth/Qwen2.5-7B-Instruct-unsloth-bnb-4bit`
 (strong Arabic). Lighter alternative:
 `--base-model unsloth/Qwen3-4B-Instruct-2507-bnb-4bit`.
 
-Expected output on Colab:
+Expected output on Drive after training:
 
 ```
-outputs/syria/adapter/
-outputs/syria/gguf/
-outputs/syria/Modelfile
+/content/drive/MyDrive/arabic-asmr/outputs/syria/adapter/
+/content/drive/MyDrive/arabic-asmr/outputs/syria/gguf/
+/content/drive/MyDrive/arabic-asmr/outputs/syria/Modelfile
+/content/drive/MyDrive/arabic-asmr/outputs/syria/checkpoint-XXX/
 ```
 
-### 4. Resume from an interrupted session
+### 5. Resume from an interrupted session
 
-`train_unsloth_sft.py` looks for `outputs/<dialect>/checkpoint-NNN`
-and automatically passes `resume_from_checkpoint=True` to
-`trainer.train()`. To force a fresh run:
+If your Colab session disconnects (common on the free tier), re-mount Drive
+and re-run the same command. The script detects existing checkpoints:
 
 ```python
-!python train_unsloth_sft.py --dialect syria --no-resume
+from google.colab import drive
+drive.mount('/content/drive')
+!pip install -q unsloth trl datasets
+
+# The --output-dir already has checkpoints, so resume is automatic:
+!python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
+    --dialect syria \
+    --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \
+    --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \
+    --epochs 2
 ```
 
-### 5. Download and serve locally via Ollama
+To force a fresh run (ignore checkpoints):
 
-On the Mac, next to the downloaded `.gguf` file:
+```python
+!python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
+    --dialect syria \
+    --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \
+    --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \
+    --epochs 2 \
+    --no-resume
+```
+
+### 6. Download artifacts from Drive
+
+After training completes, download the GGUF and Modelfile from Google Drive
+to your Mac:
 
 ```bash
-ollama create arabic-asmr-syria -f Modelfile
-ollama create arabic-asmr-egypt -f Modelfile
+# Download the trained artifacts
+# (from Google Drive web UI or rclone)
 
+# Then serve locally via Ollama:
+ollama create arabic-asmr-syria -f Modelfile
 ollama run arabic-asmr-syria:latest "اختبرني"
 ```
 
-### 6. Point the app at the fine-tuned model
+### Point the app at the fine-tuned model
 
 For the Syrian model:
 
@@ -158,7 +225,7 @@ LLM_PROVIDER=ollama
 OLLAMA_MODEL=arabic-asmr-egypt:latest
 ```
 
-### 7. Evaluate
+### Evaluate
 
 ```bash
 uv run python finetuning/eval_ab.py --ft-model arabic-asmr-syria:latest

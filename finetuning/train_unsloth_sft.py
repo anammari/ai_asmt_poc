@@ -7,19 +7,29 @@ Unsloth does not support macOS - do not run this on the Mac app host.
 (The Mac only builds the dataset and later serves the exported GGUF
 through Ollama.)
 
-Quick start on Colab (Runtime -> T4 GPU):
-    !pip install -q unsloth trl datasets
-    # Upload train_unsloth_sft.py next to this script, then:
-    !python train_unsloth_sft.py --dialect syria --epochs 2
+Data must live on Google Drive so it persists across Colab sessions.
+See finetuning/README.md for the full workflow.
 
-Outputs (default: outputs/<dialect>/):
-    outputs/<dialect>/adapter/   LoRA adapter (small; can be pushed to HF Hub)
-    outputs/<dialect>/gguf/      q4_k_m GGUF for llama.cpp/Ollama
-    outputs/<dialect>/Modelfile  Ollama recipe; then on the Mac:
-                                   ollama create arabic-asmr-<dialect> -f outputs/<dialect>/Modelfile
-                                 and set in the app .env:
-                                   LLM_PROVIDER=ollama
-                                   OLLAMA_MODEL=arabic-asmr-<dialect>:latest
+Quick start on Colab (Runtime -> T4 GPU):
+    from google.colab import drive
+    drive.mount('/content/drive')
+
+    !pip install -q unsloth trl datasets
+
+    !python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \\
+        --dialect syria \\
+        --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \\
+        --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \\
+        --epochs 2
+
+Outputs (default: <output-dir>/):
+    <output-dir>/adapter/   LoRA adapter (small; can be pushed to HF Hub)
+    <output-dir>/gguf/      q4_k_m GGUF for llama.cpp/Ollama
+    <output-dir>/Modelfile  Ollama recipe; then on the Mac:
+                               ollama create arabic-asmr-<dialect> -f <output-dir>/Modelfile
+                             and set in the app .env:
+                               LLM_PROVIDER=ollama
+                               OLLAMA_MODEL=arabic-asmr-<dialect>:latest
 """
 import argparse
 import os
