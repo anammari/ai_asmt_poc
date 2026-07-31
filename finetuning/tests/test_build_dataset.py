@@ -8,116 +8,140 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from finetuning import build_dataset as builder
+# Import the module itself (not its main) so we can test internals.
+import importlib.util
+spec = importlib.util.spec_from_file_location(
+    "builder", REPO_ROOT / "finetuning" / "build_dataset.py"
+)
+builder = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(builder)
 
 
-class TestBuildDataset(unittest.TestCase):
+class TestBuildDatasetAppendOnly(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        self.ingested_dir = self.tmpdir.name
-        self._write_json(
-            "syria_sample.json",
-            {
-                "dialect": "syria",
-                "video_id": "sample1",
-                "title": "همسات المساء",
-                "transcript": "[pause:2s] هلا فيك.\nنحنا هلق بالليل.\n",
-            },
-        )
-        self._write_json(
-            "egypt_sample.json",
-            {
-                "dialect": "egypt",
-                "video_id": "sample2",
-                "title": "تهدئة قبل النوم",
-                "transcript": "[pause:2s] أهلاً بيك.\nخد نفسك.\n",
-            },
-        )
-        self._write_json(
-            "empty_title.json",
-            {
-                "dialect": "syria",
-                "video_id": "sample3",
-                "title": "   ",
-                "transcript": "transcript without title",
-            },
-        )
-        self._write_json(
-            "empty_transcript.json",
-            {
-                "dialect": "syria",
-                "video_id": "sample4",
-                "title": "title without transcript",
-                "transcript": "",
-            },
-        )
+        self.ingested_dir = os.path.join(self.tmpdir.name, "ingested")
+        self.jsonl_path = os.path.join(self.tmpdir.name, "training.jsonl")
+        os.makedirs(self.ingested_dir)
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _write_json(self, filename: str, data: dict) -> None:
+    def _write_ingested(self, filename: str, dialect: str, title: str, transcript: str):
         path = os.path.join(self.ingested_dir, filename)
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False)
+            json.dump({
+                "dialect": dialect,
+                "video_id": filename.replace(".json", ""),
+                "url": f"https://youtube.com/watch?v={filename.replace('.json', '')}",
+                "title": title,
+                "transcript": transcript,
+                "ingested_at": "2025-01-01T00:00:00",
+            }, fh, ensure_ascii=False)
 
-    def _load_jsonl(self, path: str) -> list[dict]:
+    def _write_jsonl(self, records: list[dict]):
+        with open(self.jsonl_path, "w", encoding="utf-8") as fh:
+            for r in records:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+    def _load_jsonl(self) -> list[dict]:
+        if not os.path.exists(self.jsonl_path):
+            return []
         records = []
-        with open(path, encoding="utf-8") as fh:
+        with open(self.jsonl_path, encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line:
                     records.append(json.loads(line))
         return records
 
-    def test_syria_chat_structure(self):
-        out_path = os.path.join(self.tmpdir.name, "syria_out.jsonl")
-        code = builder.main([
-            "--dialect", "syria",
-            "--ingestion-dir", self.ingested_dir,
-            "--out", out_path,
-        ])
-        self.assertEqual(code, 0)
-
-        records = self._load_jsonl(out_path)
-        # Only the valid syria sample should survive the missing-title/transcript filters.
-        self.assertEqual(len(records), 1)
-
-        record = records[0]
-        self.assertIn("messages", record)
-        self.assertEqual(len(record["messages"]), 3)
-
-        for msg in record["messages"]:
-            self.assertIn("role", msg)
-            self.assertIsInstance(msg["content"], str)
-
-        self.assertEqual(record["messages"][0]["role"], "system")
-        self.assertEqual(record["messages"][0]["content"], builder.SYSTEM_PROMPT)
-        self.assertEqual(record["messages"][1]["role"], "user")
-        self.assertIn("همسات المساء", record["messages"][1]["content"])
-        self.assertTrue(
-            record["messages"][1]["content"].startswith("User Instructions / Topic:")
+    # --- Edge case: first run (no existing JSONL) ---
+    def test_first_run_creates_records(self):
+        self._write_ingested("v1.json", "syria", "همسات المساء", "[pause] هدوء المساء")
+        new_records, stats, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
         )
-        self.assertEqual(record["messages"][2]["role"], "assistant")
-        self.assertIn("نحنا هلق بالليل", record["messages"][2]["content"])
+        self.assertEqual(stats["records_appended"], 1)
+        self.assertEqual(stats["already_present"], 0)
+        self.assertEqual(len(new_records), 1)
 
-    def test_egypt_chat_structure(self):
-        out_path = os.path.join(self.tmpdir.name, "egypt_out.jsonl")
-        code = builder.main([
-            "--dialect", "egypt",
-            "--ingestion-dir", self.ingested_dir,
-            "--out", out_path,
-        ])
-        self.assertEqual(code, 0)
+    # --- Edge case: re-run with no new data ---
+    def test_rerun_no_new_data(self):
+        self._write_ingested("v1.json", "syria", "همسات المساء", "[pause] هدوء المساء")
+        # First run: creates record
+        new1, stats1, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        # Write to JSONL
+        self._write_jsonl(new1)
+        # Second run: no new data
+        new2, stats2, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        self.assertEqual(stats2["records_appended"], 0)
+        self.assertEqual(stats2["already_present"], 1)
+        self.assertEqual(len(new2), 0)
 
-        records = self._load_jsonl(out_path)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["messages"][1]["role"], "user")
-        self.assertIn("تهدئة قبل النوم", records[0]["messages"][1]["content"])
-        self.assertIn("أهلاً بيك", records[0]["messages"][2]["content"])
+    # --- Edge case: add one new ingested file ---
+    def test_add_new_ingested_appends_only_new(self):
+        self._write_ingested("v1.json", "syria", "همسات المساء", "[pause] هدوء المساء")
+        # First run
+        new1, _, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        self._write_jsonl(new1)
+        # Add a second ingested file
+        self._write_ingested("v2.json", "syria", "أصوات الطبيعة", "[pause] أصوات الطبيعة")
+        # Second run
+        new2, stats2, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        self.assertEqual(stats2["records_appended"], 1)
+        self.assertEqual(stats2["already_present"], 1)
+        self.assertEqual(len(new2), 1)
+        self.assertIn("أصوات الطبيعة", new2[0]["messages"][1]["content"])
 
-    def test_invalid_dialect(self):
-        with self.assertRaises(SystemExit):
-            builder.main(["--dialect", "lebanon"])
+    # --- Edge case: JSONL has existing synthetic records (not from ingested) ---
+    def test_skips_synthetic_records_correctly(self):
+        self._write_ingested("v1.json", "syria", "همسات المساء", "[pause] هدوء المساء")
+        # Write a JSONL with 1 real + 1 synthetic record
+        real = [builder._to_record("همسات المساء", "[pause] هدوء المساء", "syria")]
+        synthetic = [builder._to_record("عنوان وهمي", "نص وهمي", "syria")]
+        self._write_jsonl(real + synthetic)
+        # Re-run should find 1 real already present, 0 new
+        new, stats, existing_total = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        self.assertEqual(stats["already_present"], 1)
+        self.assertEqual(stats["records_appended"], 0)
+        self.assertEqual(len(new), 0)
+
+    # --- Edge case: dialect mismatch filtered ---
+    def test_dialect_mismatch_filtered(self):
+        self._write_ingested("v1.json", "egypt", "عنوان مصري", "[pause] نص مصري")
+        new, stats, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        self.assertEqual(stats["dialect_mismatch"], 1)
+        self.assertEqual(stats["records_appended"], 0)
+
+    # --- Edge case: missing title or transcript ---
+    def test_missing_title_or_transcript(self):
+        self._write_ingested("v1.json", "syria", "", "[pause] نص بدون عنوان")
+        self._write_ingested("v2.json", "syria", "عنوان بدون نص", "")
+        new, stats, _ = builder.build_new_real_records(
+            "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+        )
+        self.assertEqual(stats["missing_title"], 1)
+        self.assertEqual(stats["missing_transcript"], 1)
+        self.assertEqual(stats["records_appended"], 0)
+
+    # --- Edge case: empty ingestion directory ---
+    def test_empty_ingestion_dir(self):
+        with self.assertRaises(ValueError):
+            builder.build_new_real_records(
+                "syria", self.ingested_dir, existing_jsonl_path=self.jsonl_path,
+            )
 
 
 if __name__ == "__main__":

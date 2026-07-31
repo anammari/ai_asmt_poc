@@ -8,38 +8,28 @@ Input: JSON files produced by ingest_YT_transcript.py in
 Output: Unsloth-compatible chat-format JSONL:
        finetuning/data/training/<dialect>/arabic_asmr_sft.jsonl
 
-Each line (one sample) has:
-  {"messages": [
-      {"role": "system",    "content": <ASMR scriptwriter system prompt>},
-      {"role": "user",      "content": "User Instructions / Topic: <video title>"},
-      {"role": "assistant", "content": <Arabic ASMR transcript>},
-  ]}
-
-The system prompt mirrors the structure the app uses at inference time
-(llm.rewrite_script with language="Arabic (العربية)"), so the fine-tuned
-model learns the exact distribution the app will query.
+Append-only: re-running only adds new ingested records not already present.
+Existing records (real or synthetic) are never modified or removed.
 
 Usage:
   python finetuning/build_dataset.py --dialect syria
   python finetuning/build_dataset.py --dialect egypt
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
 
-# Allow `python finetuning/build_dataset.py` from the project root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 VALID_DIALECTS = {"syria", "egypt"}
 
-# Dialect label for the user message (kept for traceability).
 DIALECT_DISPLAY = {
     "syria": "Syrian Arabic",
     "egypt": "Egyptian Arabic",
 }
 
-# System prompt shape mirrors llm.rewrite_script's Arabic configuration.
 SYSTEM_PROMPT = (
     "You are an expert ASMR scriptwriter generating scripts for an automated "
     "text-to-speech engine.\n"
@@ -78,12 +68,18 @@ def _default_ingestion_dir(dialect: str) -> str:
     )
 
 
+def _title_hash(title: str) -> str:
+    return hashlib.sha256(title.strip().lower().encode("utf-8")).hexdigest()
+
+
+def _user_topic(title: str, dialect: str) -> str:
+    return f"User Instructions / Topic: [{DIALECT_DISPLAY[dialect]}] {title}"
+
+
 def load_ingested_files(ingestion_dir: str) -> list[dict]:
-    """Read every .json file in the ingestion directory."""
     records: list[dict] = []
     if not os.path.isdir(ingestion_dir):
         raise FileNotFoundError(f"Ingestion directory not found: {ingestion_dir}")
-
     for filename in sorted(os.listdir(ingestion_dir)):
         if not filename.endswith(".json"):
             continue
@@ -93,19 +89,34 @@ def load_ingested_files(ingestion_dir: str) -> list[dict]:
     return records
 
 
+def load_existing_records(jsonl_path: str) -> list[dict]:
+    if not os.path.exists(jsonl_path):
+        return []
+    records = []
+    with open(jsonl_path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    return records
+
+
 def _to_record(title: str, transcript: str, dialect: str) -> dict:
-    topic = f"[{DIALECT_DISPLAY[dialect]}] {title}"
     return {
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"User Instructions / Topic: {topic}"},
+            {"role": "user", "content": _user_topic(title, dialect)},
             {"role": "assistant", "content": transcript},
         ]
     }
 
 
-def build_dataset(dialect: str, ingestion_dir: str) -> tuple[list[dict], dict]:
-    """Construct chat-format JSONL records from ingested YouTube metadata."""
+def build_new_real_records(
+    dialect: str,
+    ingestion_dir: str,
+    existing_jsonl_path: str | None = None,
+) -> tuple[list[dict], dict, int]:
+    """Return ONLY ingested records not already present in the existing JSONL."""
     if dialect not in VALID_DIALECTS:
         raise ValueError(
             f"Unsupported dialect '{dialect}'. Supported: {sorted(VALID_DIALECTS)}"
@@ -115,10 +126,20 @@ def build_dataset(dialect: str, ingestion_dir: str) -> tuple[list[dict], dict]:
     if not ingested:
         raise ValueError(f"No ingested .json files found in {ingestion_dir}")
 
-    records: list[dict] = []
+    # Build hash set of existing user-message topics (covers both real & synthetic).
+    existing_topics: set[str] = set()
+    if existing_jsonl_path and os.path.exists(existing_jsonl_path):
+        for record in load_existing_records(existing_jsonl_path):
+            for msg in record.get("messages", []):
+                if msg.get("role") == "user":
+                    existing_topics.add(msg["content"].strip())
+                    break
+
+    new_records: list[dict] = []
     stats = {
         "ingested_files": len(ingested),
-        "records_produced": 0,
+        "already_present": 0,
+        "records_appended": 0,
         "missing_title": 0,
         "missing_transcript": 0,
         "dialect_mismatch": 0,
@@ -137,49 +158,53 @@ def build_dataset(dialect: str, ingestion_dir: str) -> tuple[list[dict], dict]:
         if not transcript:
             stats["missing_transcript"] += 1
             continue
-        records.append(_to_record(title, transcript, dialect))
+        topic = _user_topic(title, dialect)
+        if topic in existing_topics:
+            stats["already_present"] += 1
+            continue
+        new_records.append(_to_record(title, transcript, dialect))
 
-    stats["records_produced"] = len(records)
-    return records, stats
+    stats["records_appended"] = len(new_records)
+    return new_records, stats, len(existing_topics)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Build a dialect-specific Arabic ASMR fine-tuning dataset."
+        description="Build a dialect-specific Arabic ASMR fine-tuning dataset (append-only)."
     )
     parser.add_argument(
         "--dialect",
         choices=sorted(VALID_DIALECTS),
         required=True,
-        help="Target dialect (syria or egypt).",
     )
-    parser.add_argument(
-        "--ingestion-dir",
-        help="Directory containing ingested JSON files. Auto-derived from --dialect if omitted.",
-    )
-    parser.add_argument(
-        "--out",
-        help="Output JSONL path. Auto-derived from --dialect if omitted.",
-    )
+    parser.add_argument("--ingestion-dir", default=None)
+    parser.add_argument("--out", default=None)
     args = parser.parse_args(argv)
 
     ingestion_dir = args.ingestion_dir or _default_ingestion_dir(args.dialect)
     out_path = args.out or _default_output_path(args.dialect)
 
-    records, stats = build_dataset(args.dialect, ingestion_dir)
-    if not records:
-        print("error: no valid samples produced.", file=sys.stderr)
-        return 1
+    new_records, stats, existing_total = build_new_real_records(
+        args.dialect, ingestion_dir, existing_jsonl_path=out_path,
+    )
+
+    if not new_records:
+        print(f"[stats] dialect={args.dialect}")
+        for key, value in stats.items():
+            print(f"  {key}: {value}")
+        print(f"[done] {stats['records_appended']} new records; JSONL already has {existing_total} records total")
+        return 0
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as fh:
-        for record in records:
+    with open(out_path, "a", encoding="utf-8") as fh:
+        for record in new_records:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    new_total = existing_total + stats["records_appended"]
     print(f"[stats] dialect={args.dialect}")
     for key, value in stats.items():
         print(f"  {key}: {value}")
-    print(f"[done] wrote {len(records)} samples -> {out_path}")
+    print(f"[done] appended {stats['records_appended']} new records -> {out_path} (total: {new_total})")
     return 0
 
 
