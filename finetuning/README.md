@@ -1,73 +1,179 @@
 # Arabic ASMR Fine-Tuning (Unsloth)
 
-Goal: improve the quality of the **Arabic ASMR transcripts** the app generates,
-beyond what prompting alone achieves, by supervised fine-tuning (SFT) a small
-Arabic-capable instruct model on curated Arabic ASMR scripts, then serving it
-locally through Ollama (which the app already supports via `LLM_PROVIDER=ollama`).
+Goal: fine-tune a dialect-specific Arabic ASMR scriptwriter using real
+ASMR YouTube transcripts from Syria and Egypt. This produces two
+specialised models, one per dialect, served locally through Ollama
+(`LLM_PROVIDER=ollama`).
 
-## Why this design
+## Pipeline overview
 
-- **Unsloth QLoRA**: trains on a free Colab T4 (Unsloth does not run on macOS).
-  The Mac only builds the dataset and serves the result.
-- **Chat-format SFT** on the app's actual system-prompt shape
-  (`finetuning/build_dataset.py` mirrors `llm.rewrite_script` for Arabic), so
-  the fine-tune matches the runtime distribution.
-- **GGUF export + Ollama**: zero app code changes — just point
-  `OLLAMA_MODEL` at the fine-tuned model.
+1. **Ingest YouTube videos**: add URLs to `finetuning/data/metadata.csv`
+   and run `ingest_YT_transcript.py`.
+2. **Build the dataset**: run `build_dataset.py --dialect <dialect>`.
+3. **Fine-tune on Colab**: run `train_unsloth_sft.py --dialect <dialect>`.
 
 ## Files
 
 | file | runs where | purpose |
 |---|---|---|
-| `build_dataset.py` | Mac (local) | Seeds + Gemini-augmented Arabic ASMR samples -> `data/arabic_asmr_sft.jsonl` (validated chat-format JSONL) |
+| `data/metadata.csv` | local | Curated list of dialect/video pairs to ingest (columns: `Dialect`, `URL`) |
+| `ingest_YT_transcript.py` | local (CPU) | Downloads video title + Arabic transcript from YouTube into `data/ingested/<dialect>/` |
+| `build_dataset.py` | local (CPU) | Maps `title -> user` and `transcript -> assistant`; writes `data/training/<dialect>/arabic_asmr_sft.jsonl` |
 | `train_unsloth_sft.py` | Colab / CUDA | QLoRA SFT with Unsloth; exports LoRA adapter + `q4_k_m` GGUF + Ollama `Modelfile` |
-| `eval_ab.py` | Mac (local) | A/B: base Ollama model vs fine-tuned model -> `eval_report.md` |
-| `data/arabic_asmr_sft.jsonl` | - | Generated dataset (5 built-in seeds + Gemini samples) |
+| `eval_ab.py` | local | A/B: base Ollama model vs fine-tuned model -> `eval_report.md` |
 
-## Developer action points (step by step)
+## Data mapping principle (CRITICAL)
 
-1. **Build the dataset locally** (uses your `GEMINI_API_KEY`; ~5-15 min):
-   ```bash
-   uv run python finetuning/build_dataset.py --count 60
-   ```
-   (Smoke-test without Gemini: `uv run python finetuning/build_dataset.py --offline`)
+- **User prompt** = the YouTube video title (wrapped with the dialect label).
+- **Assistant completion** = the full Arabic video transcript.
 
-2. **Train on Colab** (Runtime -> Change runtime type -> T4 GPU):
-   ```python
-   !pip install -q unsloth trl datasets
-   # Upload train_unsloth_sft.py + arabic_asmr_sft.jsonl (Files panel), then:
-   !python train_unsloth_sft.py --dataset arabic_asmr_sft.jsonl --epochs 2
-   ```
-   Default base model: `unsloth/Qwen2.5-7B-Instruct-unsloth-bnb-4bit` (strong
-   Arabic). Lighter alternative: `--base-model unsloth/Qwen3-4B-Instruct-2507-bnb-4bit`.
-   Expected runtime on T4: ~30-60 min for 60 samples x 2 epochs.
+`build_dataset.py` enforces this 1-to-1 mapping in the chat-format JSONL
+`messages` array.
 
-3. **Download the artifacts**: `outputs/gguf/*.gguf` and `outputs/Modelfile`.
-   (Optional: push `outputs/adapter/` to HF Hub for versioning.)
+## Step-by-step developer walkthrough
 
-4. **Serve locally via Ollama** (on the Mac, next to the `.gguf` file):
-   ```bash
-   ollama create arabic-asmr -f Modelfile
-   ollama run arabic-asmr:latest "اختبرني"   # sanity check
-   ```
+### 1. Add YouTube URLs to ingest
 
-5. **Point the app at the fine-tuned model** (`.env`):
-   ```env
-   LLM_PROVIDER=ollama
-   OLLAMA_MODEL=arabic-asmr:latest
-   ```
+Edit `finetuning/data/metadata.csv`:
 
-6. **Evaluate** (base vs fine-tuned side-by-side):
-   ```bash
-   uv run python finetuning/eval_ab.py --ft-model arabic-asmr:latest
-   ```
-   Fill the rubric in `finetuning/eval_report.md`. If quality is weak:
-   add more/better seed exemplars to `SEED_SAMPLES` in `build_dataset.py`,
-   raise `--count`, or train one more epoch — then repeat from step 1.
+```csv
+Dialect,URL
+Syria,https://www.youtube.com/watch?v=SyriaSample1
+Syria,https://www.youtube.com/watch?v=SyriaSample2
+Egypt,https://www.youtube.com/watch?v=EgyptSample1
+```
+
+Use exactly `Syria` or `Egypt` in the `Dialect` column.
+
+Run the ingestion script:
+
+```bash
+uv run python finetuning/ingest_YT_transcript.py
+# or explicitly:
+uv run python finetuning/ingest_YT_transcript.py \
+    --metadata-csv finetuning/data/metadata.csv \
+    --output-root finetuning/data/ingested
+```
+
+This creates JSON files like:
+
+```
+finetuning/data/ingested/syria/20250731_120000_SyriaSample1.json
+finetuning/data/ingested/egypt/20250731_120100_EgyptSample1.json
+```
+
+Each file contains `dialect`, `video_id`, `url`, `title`, `transcript`
+and `ingested_at`.
+
+### 2. Build the training dataset
+
+```bash
+uv run python finetuning/build_dataset.py --dialect syria
+uv run python finetuning/build_dataset.py --dialect egypt
+```
+
+Outputs:
+
+```
+finetuning/data/training/syria/arabic_asmr_sft.jsonl
+finetuning/data/training/egypt/arabic_asmr_sft.jsonl
+```
+
+You can override paths:
+
+```bash
+uv run python finetuning/build_dataset.py --dialect syria \
+    --ingestion-dir finetuning/data/ingested/syria \
+    --out finetuning/data/training/syria/arabic_asmr_sft.jsonl
+```
+
+### 3. Train on Google Colab
+
+Upload `finetuning/data/training/<dialect>/arabic_asmr_sft.jsonl`
+and `finetuning/train_unsloth_sft.py` to Colab.
+Set Runtime → Change runtime type → T4 GPU.
+
+Install dependencies:
+
+```python
+!pip install -q unsloth trl datasets
+```
+
+Train:
+
+```python
+# Syrian dialect
+!python train_unsloth_sft.py --dialect syria --epochs 2
+
+# Egyptian dialect
+!python train_unsloth_sft.py --dialect egypt --epochs 2
+```
+
+Default base model: `unsloth/Qwen2.5-7B-Instruct-unsloth-bnb-4bit`
+(strong Arabic). Lighter alternative:
+`--base-model unsloth/Qwen3-4B-Instruct-2507-bnb-4bit`.
+
+Expected output on Colab:
+
+```
+outputs/syria/adapter/
+outputs/syria/gguf/
+outputs/syria/Modelfile
+```
+
+### 4. Resume from an interrupted session
+
+`train_unsloth_sft.py` looks for `outputs/<dialect>/checkpoint-NNN`
+and automatically passes `resume_from_checkpoint=True` to
+`trainer.train()`. To force a fresh run:
+
+```python
+!python train_unsloth_sft.py --dialect syria --no-resume
+```
+
+### 5. Download and serve locally via Ollama
+
+On the Mac, next to the downloaded `.gguf` file:
+
+```bash
+ollama create arabic-asmr-syria -f Modelfile
+ollama create arabic-asmr-egypt -f Modelfile
+
+ollama run arabic-asmr-syria:latest "اختبرني"
+```
+
+### 6. Point the app at the fine-tuned model
+
+For the Syrian model:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=arabic-asmr-syria:latest
+```
+
+Or the Egyptian model:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=arabic-asmr-egypt:latest
+```
+
+### 7. Evaluate
+
+```bash
+uv run python finetuning/eval_ab.py --ft-model arabic-asmr-syria:latest
+```
+
+Fill the rubric in `finetuning/eval_report.md`. If quality is weak,
+add more high-quality YouTube URLs to `metadata.csv`, re-run ingestion
+and dataset creation, then re-train.
 
 ## Notes
 
-- The dataset quality gate rejects non-Arabic, markdown-tainted, pause-less,
-  or length-outlier samples, so a larger `--count` mostly costs Gemini quota.
-- Keep `LLM_PROVIDER=gemini` if you only want the improved prompt path; the
-  fine-tune is an opt-in alternative provider.
+- The old Gemini-based synthetic generation has been removed. Every
+  training sample must come from a real YouTube transcript curated in
+  `metadata.csv`.
+- Unsloth only runs on Linux with NVIDIA GPUs. The Colab T4 runtime is
+  the intended training target.
+- Keep `LLM_PROVIDER=gemini` in the app if you only want the prompt
+  path; the fine-tuned models are an opt-in provider.

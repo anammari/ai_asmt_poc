@@ -17,4 +17,11 @@ dependencies = [
     "torch>=2.11.0",
     "transformers>=5.4.0",
     "wikipedia>=1.4.0",
+    "youtube-transcript-api>=1.0.0",
+    "yt-dlp>=2025.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
 ]

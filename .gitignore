@@ -31,3 +31,11 @@ qa_test_issues.md
 
 # Local editor/tooling noise
 .DS_Store
+
+# Test artifacts
+.pytest_cache/
+finetuning/tests/__pycache__/
+
+# Ingested I/O data (downloaded transcripts, built datasets)
+finetuning/data/ingested/
+finetuning/data/training/
