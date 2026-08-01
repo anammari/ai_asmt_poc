@@ -197,15 +197,32 @@ To force a fresh run (ignore checkpoints):
 
 ### 6. Download artifacts from Drive
 
-After training completes, download the GGUF and Modelfile from Google Drive
-to your Mac:
+After training completes, the following files live on Google Drive at
+`/content/drive/MyDrive/arabic-asmr/outputs/syria/`:
+
+| File | Purpose | Required? |
+|---|---|---|
+| `gguf/*.gguf` | Quantized model for Ollama | Yes |
+| `Modelfile` | Ollama recipe pointing at the `.gguf` | Yes |
+| `adapter/` | LoRA adapter weights (HF format) | Optional (versioning) |
+| `checkpoint-NNN/` | Training checkpoint | Optional (resume only) |
+
+Download the `.gguf` file and `Modelfile` to a local directory **outside the
+repo tree** — Ollama needs a clean directory with just these two files:
 
 ```bash
-# Download the trained artifacts
-# (from Google Drive web UI or rclone)
+# Create a directory outside the repo for the Ollama model
+mkdir -p ~/ollama-models/arabic-asmr-syria
+
+# Copy or move the downloaded files there:
+#   ~/ollama-models/arabic-asmr-syria/*.gguf
+#   ~/ollama-models/arabic-asmr-syria/Modelfile
 
 # Then serve locally via Ollama:
-ollama create arabic-asmr-syria -f Modelfile
+ollama create arabic-asmr-syria \
+  -f ~/ollama-models/arabic-asmr-syria/Modelfile
+
+# Quick test:
 ollama run arabic-asmr-syria:latest "اختبرني"
 ```
 
