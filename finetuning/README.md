@@ -90,20 +90,29 @@ uv run python finetuning/build_dataset.py --dialect syria \
 ### 3. Upload prepared data to Google Drive
 
 Before training on Colab, copy the prepared dataset to Google Drive so it
-persists between Colab sessions:
+persists between Colab sessions.
+
+**Using rclone** (recommended — the project has rclone configured with remote
+`gdrive:`):
 
 ```bash
-# From your local machine, upload the training data and script to Drive.
-# Option A — use the Google Drive web UI:
-#   1. Open drive.google.com
-#   2. Create folder: arabic-asmr/syria/
-#   3. Upload finetuning/data/training/syria/arabic_asmr_sft.jsonl into it
-#   4. Upload finetuning/train_unsloth_sft.py into arabic-asmr/
-#
-# Option B — use rclone (if your Drive is synced locally):
-cp finetuning/data/training/syria/arabic_asmr_sft.jsonl ~/GoogleDrive/arabic-asmr/syria/
-cp finetuning/train_unsloth_sft.py ~/GoogleDrive/arabic-asmr/
+# Create the Drive directories (one-time)
+rclone mkdir gdrive:arabic-asmr/syria
+rclone mkdir gdrive:arabic-asmr/egypt
+
+# Upload the training data and script
+rclone copy finetuning/data/training/syria/arabic_asmr_sft.jsonl \
+  gdrive:arabic-asmr/syria/
+rclone copy finetuning/train_unsloth_sft.py \
+  gdrive:arabic-asmr/
 ```
+
+**Using the Google Drive web UI** (alternative):
+
+1. Open drive.google.com
+2. Create folder: `arabic-asmr/syria/`
+3. Upload `finetuning/data/training/syria/arabic_asmr_sft.jsonl` into it
+4. Upload `finetuning/train_unsloth_sft.py` into `arabic-asmr/`
 
 You only need to upload the JSONL file and the training script. The ingestion
 and dataset builder run on your Mac, not on Colab.
@@ -214,9 +223,15 @@ repo tree** — Ollama needs a clean directory with just these two files:
 # Create a directory outside the repo for the Ollama model
 mkdir -p ~/ollama-models/arabic-asmr-syria
 
-# Copy or move the downloaded files there:
-#   ~/ollama-models/arabic-asmr-syria/*.gguf
-#   ~/ollama-models/arabic-asmr-syria/Modelfile
+# Download from Drive using rclone:
+rclone copy gdrive:arabic-asmr/outputs/syria/gguf/ \
+  ~/ollama-models/arabic-asmr-syria/
+rclone copy gdrive:arabic-asmr/outputs/syria/Modelfile \
+  ~/ollama-models/arabic-asmr-syria/
+
+# Verify:
+ls ~/ollama-models/arabic-asmr-syria/
+# Should show: *.gguf  Modelfile
 
 # Then serve locally via Ollama:
 ollama create arabic-asmr-syria \
