@@ -34,7 +34,9 @@ Outputs (default: <output-dir>/):
 import argparse
 import os
 import re
+import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -243,17 +245,53 @@ def main(argv=None) -> int:
             print(f"  final logged loss:  {history[-1]['loss']:.4f}")
 
     adapter_dir = os.path.join(output_dir, "adapter")
-    gguf_dir = os.path.join(output_dir, "gguf")
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
     print(f"[save] LoRA adapter -> {adapter_dir}")
 
-    print(f"[save] exporting GGUF ({args.gguf_quant}) -> {gguf_dir}")
-    model.save_pretrained_gguf(gguf_dir, tokenizer,
-                             quantization_method=args.gguf_quant)
+    # GGUF export: merge + convert in a local temp directory to avoid
+    # partial writes on Google Drive (a FUSE mount). Only the final .gguf
+    # file is copied to Drive.
+    gguf_drive_dir = os.path.join(output_dir, "gguf")
+    os.makedirs(gguf_drive_dir, exist_ok=True)
 
+    with tempfile.TemporaryDirectory(prefix="unsloth_gguf_") as tmp_gguf:
+        print(f"[gguf] merging to local temp: {tmp_gguf}")
+        print(f"[gguf] quantification: {args.gguf_quant}")
+        try:
+            model.save_pretrained_gguf(
+                tmp_gguf, tokenizer,
+                quantization_method=args.gguf_quant,
+            )
+        except Exception as exc:
+            print(f"[gguf] WARNING: conversion failed: {exc}", file=sys.stderr)
+            print("[gguf] The LoRA adapter was saved and can be merged manually.")
+            print("[gguf] To convert manually on Colab, run:")
+            print("  from unsloth import FastLanguageModel")
+            print("  model, tokenizer = FastLanguageModel.from_pretrained(...)")
+            print("  model.save_pretrained_gguf('/tmp/model', tokenizer, 'q4_k_m')")
+            print(f"  !cp /tmp/model/*.gguf {gguf_drive_dir}/")
+            return 1
+
+        # Copy only the final .gguf files to Drive.
+        gguf_files_copied = 0
+        for fname in os.listdir(tmp_gguf):
+            if fname.endswith(".gguf"):
+                src = os.path.join(tmp_gguf, fname)
+                dst = os.path.join(gguf_drive_dir, fname)
+                shutil.copy2(src, dst)
+                gguf_files_copied += 1
+                size_mb = os.path.getsize(dst) / (1024 * 1024)
+                print(f"[gguf] copied {fname} ({size_mb:.0f} MB) -> {gguf_drive_dir}")
+
+        if gguf_files_copied == 0:
+            print("[gguf] WARNING: no .gguf files produced in temp directory",
+                  file=sys.stderr)
+            return 1
+
+    # Write the Ollama Modelfile pointing at the GGUF.
     modelfile_path = os.path.join(output_dir, "Modelfile")
-    gguf_files = [f for f in os.listdir(gguf_dir) if f.endswith(".gguf")]
+    gguf_files = [f for f in os.listdir(gguf_drive_dir) if f.endswith(".gguf")]
     gguf_name = gguf_files[0] if gguf_files else "model.gguf"
     with open(modelfile_path, "w", encoding="utf-8") as fh:
         fh.write(
