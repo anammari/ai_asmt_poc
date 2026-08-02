@@ -249,50 +249,90 @@ def main(argv=None) -> int:
     tokenizer.save_pretrained(adapter_dir)
     print(f"[save] LoRA adapter -> {adapter_dir}")
 
-    # GGUF export: merge + convert in a local temp directory to avoid
-    # partial writes on Google Drive (a FUSE mount). Only the final .gguf
-    # file is copied to Drive.
+    # GGUF export: merge + convert to f16 in a local temp directory to avoid
+    # partial writes on Google Drive (a FUSE mount). Copy the f16 GGUF to
+    # Drive before quantization — if the Colab session times out during the
+    # 10-minute q4_k_m step, the f16 file is already saved.
+    # The user can then quantize locally with llama.cpp or Ollama.
     gguf_drive_dir = os.path.join(output_dir, "gguf")
     os.makedirs(gguf_drive_dir, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="unsloth_gguf_") as tmp_gguf:
         print(f"[gguf] merging to local temp: {tmp_gguf}")
-        print(f"[gguf] quantification: {args.gguf_quant}")
+        print(f"[gguf] step 1: converting to f16 GGUF (fast, ~3 min)...")
         try:
             model.save_pretrained_gguf(
                 tmp_gguf, tokenizer,
+                quantization_method="f16",
+            )
+        except Exception as exc:
+            print(f"[gguf] WARNING: f16 conversion failed: {exc}", file=sys.stderr)
+            print("[gguf] The LoRA adapter was saved; the model can be merged manually.")
+            return 1
+
+        # Copy f16 GGUF to Drive (before quantization, so it survives session drop).
+        f16_copied = False
+        gguf_container = tmp_gguf + "_gguf"  # Unsloth creates this sibling dir
+        if os.path.isdir(gguf_container):
+            for fname in os.listdir(gguf_container):
+                if fname.endswith(".gguf"):
+                    src = os.path.join(gguf_container, fname)
+                    dst = os.path.join(gguf_drive_dir, fname)
+                    shutil.copy2(src, dst)
+                    f16_copied = True
+                    size_mb = os.path.getsize(dst) / (1024 * 1024)
+                    print(f"[gguf] f16 copied to Drive: {fname} ({size_mb:.0f} MB)")
+
+        if not f16_copied:
+            print("[gguf] WARNING: no f16 GGUF produced", file=sys.stderr)
+            return 1
+
+    # Now quantize to q4_k_m from the f16 on Drive.
+    # Use a local temp dir so the quantized file is built on local disk first.
+    print(f"[gguf] step 2: quantizing f16 to {args.gguf_quant} (slow, ~10 min)...")
+    with tempfile.TemporaryDirectory(prefix="unsloth_gguf_quant_") as tmp_quant:
+        try:
+            model.save_pretrained_gguf(
+                tmp_quant, tokenizer,
                 quantization_method=args.gguf_quant,
             )
         except Exception as exc:
-            print(f"[gguf] WARNING: conversion failed: {exc}", file=sys.stderr)
-            print("[gguf] The LoRA adapter was saved and can be merged manually.")
-            print("[gguf] To convert manually on Colab, run:")
-            print("  from unsloth import FastLanguageModel")
-            print("  model, tokenizer = FastLanguageModel.from_pretrained(...)")
-            print("  model.save_pretrained_gguf('/tmp/model', tokenizer, 'q4_k_m')")
-            print(f"  !cp /tmp/model/*.gguf {gguf_drive_dir}/")
+            print(f"[gguf] WARNING: quantization failed: {exc}", file=sys.stderr)
+            print(f"[gguf] The f16 GGUF is already on Drive at {gguf_drive_dir}/")
+            print("[gguf] To quantize locally, install llama.cpp and run:")
+            print(f"  ./quantize {gguf_drive_dir}/qwen2.5-7b-instruct.F16.gguf \\")
+            print(f"    {gguf_drive_dir}/qwen2.5-7b-instruct.{args.gguf_quant.upper()}.gguf \\")
+            print(f"    {args.gguf_quant}")
             return 1
 
-        # Copy only the final .gguf files to Drive.
-        gguf_files_copied = 0
-        for fname in os.listdir(tmp_gguf):
-            if fname.endswith(".gguf"):
-                src = os.path.join(tmp_gguf, fname)
-                dst = os.path.join(gguf_drive_dir, fname)
-                shutil.copy2(src, dst)
-                gguf_files_copied += 1
-                size_mb = os.path.getsize(dst) / (1024 * 1024)
-                print(f"[gguf] copied {fname} ({size_mb:.0f} MB) -> {gguf_drive_dir}")
+        # Copy the quantized GGUF to Drive.
+        quant_container = tmp_quant + "_gguf"
+        quant_copied = 0
+        if os.path.isdir(quant_container):
+            for fname in os.listdir(quant_container):
+                if fname.endswith(".gguf"):
+                    src = os.path.join(quant_container, fname)
+                    dst = os.path.join(gguf_drive_dir, fname)
+                    shutil.copy2(src, dst)
+                    quant_copied += 1
+                    size_mb = os.path.getsize(dst) / (1024 * 1024)
+                    print(f"[gguf] quantized copied to Drive: {fname} ({size_mb:.0f} MB)")
 
-        if gguf_files_copied == 0:
-            print("[gguf] WARNING: no .gguf files produced in temp directory",
-                  file=sys.stderr)
+        if quant_copied == 0:
+            print("[gguf] WARNING: no quantized GGUF produced", file=sys.stderr)
             return 1
 
-    # Write the Ollama Modelfile pointing at the GGUF.
+    # Write the Ollama Modelfile pointing at the quantized GGUF.
     modelfile_path = os.path.join(output_dir, "Modelfile")
     gguf_files = [f for f in os.listdir(gguf_drive_dir) if f.endswith(".gguf")]
-    gguf_name = gguf_files[0] if gguf_files else "model.gguf"
+    # Prefer the quantized file (smaller) over f16.
+    gguf_name = "model.gguf"
+    for f in gguf_files:
+        if args.gguf_quant.upper() in f.upper():
+            gguf_name = f
+            break
+    if gguf_name == "model.gguf" and gguf_files:
+        gguf_name = gguf_files[0]
     with open(modelfile_path, "w", encoding="utf-8") as fh:
         fh.write(
             f"FROM ./{gguf_name}\n"
