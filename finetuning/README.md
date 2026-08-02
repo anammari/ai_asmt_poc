@@ -138,21 +138,33 @@ drive.mount('/content/drive')
 
 **Step 4c — train with the dataset on Drive:**
 
+For a **fresh training** (recommended for the first run or after changing data):
+
 ```python
-# Syrian dialect — dataset and outputs live on Drive
+# Syrian dialect — fresh start (ignores any existing checkpoints)
 !python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
     --dialect syria \
     --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \
     --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \
-    --epochs 2
+    --epochs 2 \
+    --no-resume
 
 # Egyptian dialect (once you have Egyptian data)
 !python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
     --dialect egypt \
     --dataset /content/drive/MyDrive/arabic-asmr/egypt/arabic_asmr_sft.jsonl \
     --output-dir /content/drive/MyDrive/arabic-asmr/outputs/egypt \
-    --epochs 2
+    --epochs 2 \
+    --no-resume
 ```
+
+**Why `--no-resume`?** If you re-run the same command without it, the script
+detects the old checkpoint and resumes from there, which produces zero
+additional training (loss=0). The `--no-resume` flag forces a clean start.
+
+**Resume after a session disconnect:** If your Colab session disconnects
+mid-training and you want to pick up where you left off, omit `--no-resume`
+to automatically resume from the latest checkpoint.
 
 **Why Google Drive is important:**
 | Without Drive (Files panel) | With Drive (mount) |
@@ -175,17 +187,18 @@ Expected output on Drive after training:
 /content/drive/MyDrive/arabic-asmr/outputs/syria/checkpoint-XXX/
 ```
 
-### 5. Resume from an interrupted session
+### 5. Resume after a session disconnect
 
-If your Colab session disconnects (common on the free tier), re-mount Drive
-and re-run the same command. The script detects existing checkpoints:
+If your Colab session disconnects mid-training (common on the free tier),
+re-mount Drive and re-run **without** `--no-resume` to pick up from the
+latest checkpoint:
 
 ```python
 from google.colab import drive
 drive.mount('/content/drive')
 !pip install -q unsloth trl datasets
 
-# The --output-dir already has checkpoints, so resume is automatic:
+# Omit --no-resume so it auto-detects the checkpoint:
 !python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
     --dialect syria \
     --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \
@@ -193,16 +206,9 @@ drive.mount('/content/drive')
     --epochs 2
 ```
 
-To force a fresh run (ignore checkpoints):
-
-```python
-!python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \
-    --dialect syria \
-    --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \
-    --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \
-    --epochs 2 \
-    --no-resume
-```
+**Important:** If the previous training already finished (loss > 0, checkpoints
+saved), re-running without `--no-resume` will produce zero additional training
+(loss=0). Use `--no-resume` for a fresh start or after changing the dataset.
 
 ### 6. Download artifacts from Drive
 
