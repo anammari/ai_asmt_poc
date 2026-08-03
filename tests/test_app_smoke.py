@@ -12,7 +12,7 @@ class TestAppSmoke(unittest.TestCase):
         self.assertNotIn("[", cleaned)
         self.assertIn("<<SILENCE1500MS>>", cleaned)
         self.assertIn("<<SILENCE1000MS>>", cleaned)
-        self.assertIn("# Heading", cleaned)
+        self.assertIn("Heading", cleaned)
 
     def test_sanitize_text_converts_duration_pause(self):
         raw = "Intro [pause:2s] outro"

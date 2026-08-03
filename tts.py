@@ -67,9 +67,38 @@ def generate_fish_audio(
             "Fish Audio backend requires fish_audio_tts.py and 'requests'."
         ) from exc
 
+    # Strip non-Arabic text artifacts (URLs, English words) that cause noise.
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'\b[a-zA-Z]{3,}\b', '', text)
+
+    # Normalize Arabic orthography BEFORE converting silence markers,
+    # so normalize_arabic() preserves the <<SILENCE>> markers and does not
+    # strip the [break]/[long-break] tags that replace them.
+    try:
+        from preprocess_arabic import normalize_arabic
+        text = normalize_arabic(text)
+    except ImportError:
+        pass
+
+    # Convert <<SILENCE>> markers to Fish Audio S2 natural-language tags.
+    # Fish Audio does NOT support millisecond-exact silence tags.
+    # Supported tags: [pause], [short pause], [long pause], [long-break].
+    # Multiple [pause] tags sequentially create longer gaps.
+    def _silence_to_fish_tags(ms: int) -> str:
+        if ms < 500:
+            return "[pause]"
+        elif ms < 1500:
+            return "[pause] [pause]"
+        elif ms < 3000:
+            return "[long pause]"
+        elif ms < 5000:
+            return "[long pause] [pause]"
+        else:
+            return "[long pause] [long pause]"
+
     text = re.sub(
         r"<<SILENCE(\d+)MS>>",
-        lambda m: "[break]" if int(m.group(1)) < 1500 else "[long-break]",
+        lambda m: _silence_to_fish_tags(int(m.group(1))),
         text,
     )
 

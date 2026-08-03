@@ -1,60 +1,149 @@
 # finetuning/train_unsloth_sft.py
 """
-Unsloth QLoRA fine-tuning for the Arabic ASMR scriptwriter.
+Unsloth QLoRA fine-tuning for the dialect-specific Arabic ASMR scriptwriter.
 
 DESIGNED TO RUN ON GOOGLE COLAB (free T4) OR A LINUX CUDA MACHINE.
 Unsloth does not support macOS - do not run this on the Mac app host.
 (The Mac only builds the dataset and later serves the exported GGUF
 through Ollama.)
 
-Quick start on Colab (Runtime -> T4 GPU):
-    !pip install -q unsloth trl datasets
-    # upload finetuning/data/arabic_asmr_sft.jsonl next to this script, then:
-    !python train_unsloth_sft.py --dataset arabic_asmr_sft.jsonl --epochs 2
+Data must live on Google Drive so it persists across Colab sessions.
+See finetuning/README.md for the full workflow.
 
-Outputs (default: outputs/):
-    outputs/adapter/   LoRA adapter (small; can be pushed to HF Hub)
-    outputs/gguf/      q4_k_m GGUF for llama.cpp/Ollama
-    outputs/Modelfile  Ollama recipe; then on the Mac:
-                         ollama create arabic-asmr -f outputs/Modelfile
-                       and set in the app .env:
-                         LLM_PROVIDER=ollama
-                         OLLAMA_MODEL=arabic-asmr:latest
+Quick start on Colab (Runtime -> T4 GPU):
+    from google.colab import drive
+    drive.mount('/content/drive')
+
+    !pip install -q unsloth trl datasets
+
+    !python /content/drive/MyDrive/arabic-asmr/train_unsloth_sft.py \\
+        --dialect syria \\
+        --dataset /content/drive/MyDrive/arabic-asmr/syria/arabic_asmr_sft.jsonl \\
+        --output-dir /content/drive/MyDrive/arabic-asmr/outputs/syria \\
+        --epochs 2
+
+Outputs (default: <output-dir>/):
+    <output-dir>/adapter/   LoRA adapter (small; can be pushed to HF Hub)
+    <output-dir>/gguf/      q4_k_m GGUF for llama.cpp/Ollama
+    <output-dir>/Modelfile  Ollama recipe; then on the Mac:
+                               ollama create arabic-asmr-<dialect> -f <output-dir>/Modelfile
+                             and set in the app .env:
+                               LLM_PROVIDER=ollama
+                               OLLAMA_MODEL=arabic-asmr-<dialect>:latest
 """
 import argparse
 import os
+import re
+import shutil
 import sys
+import tempfile
+import time
+from pathlib import Path
 
-DEFAULT_DATASET = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "data", "arabic_asmr_sft.jsonl")
-
-# Small instruct models with strong Arabic. Verified Unsloth 4-bit repos:
-#   unsloth/Qwen2.5-7B-Instruct-unsloth-bnb-4bit  (default, best Arabic)
-#   unsloth/Qwen3-4B-Instruct-2507-bnb-4bit       (lighter, faster)
-#   unsloth/gemma-3-4b-it-unsloth-bnb-4bit        (alternative)
 DEFAULT_BASE_MODEL = "unsloth/Qwen2.5-7B-Instruct-unsloth-bnb-4bit"
 MAX_SEQ_LENGTH = 2048
+SUPPORTED_DIALECTS = {"syria", "egypt"}
+
+
+def _default_dataset(dialect: str) -> str:
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "data",
+        "training",
+        dialect,
+        "arabic_asmr_sft.jsonl",
+    )
+
+
+def _derive_defaults(args) -> None:
+    """Fill in dialect-dependent defaults after parsing so tests can inspect them."""
+    if args.output_dir is None:
+        args.output_dir = os.path.join("outputs", args.dialect)
+    if args.ollama_name is None:
+        args.ollama_name = f"arabic-asmr-{args.dialect}"
+    if args.dataset is None:
+        args.dataset = _default_dataset(args.dialect)
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Unsloth QLoRA SFT for Arabic ASMR.")
-    parser.add_argument("--dataset", default=DEFAULT_DATASET)
-    parser.add_argument("--base-model",
-                        default=os.getenv("FT_BASE_MODEL", DEFAULT_BASE_MODEL))
+    parser = argparse.ArgumentParser(
+        description="Unsloth QLoRA SFT for Arabic ASMR (dialect-specific)."
+    )
+    parser.add_argument(
+        "--dialect",
+        choices=sorted(SUPPORTED_DIALECTS),
+        required=True,
+        help="Dialect to train for (syria or egypt).",
+    )
+    parser.add_argument(
+        "--dataset",
+        default=None,
+        help="Path to Unsloth-compatible chat JSONL. Auto-derived from --dialect if omitted.",
+    )
+    parser.add_argument(
+        "--base-model",
+        default=os.getenv("FT_BASE_MODEL", DEFAULT_BASE_MODEL),
+        help="Base model identifier or local path.",
+    )
     parser.add_argument("--epochs", type=float, default=2.0)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=16)
-    parser.add_argument("--output-dir", default="outputs")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Training output directory. Auto-derived from --dialect as outputs/<dialect>.",
+    )
     parser.add_argument("--gguf-quant", default="q4_k_m")
-    parser.add_argument("--ollama-name", default="arabic-asmr")
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--ollama-name",
+        default=None,
+        help="Ollama model name. Auto-derived from --dialect as arabic-asmr-<dialect>.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=True,
+        help="Resume from the latest checkpoint if one exists (default: True).",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        dest="force_no_resume",
+        help="Ignore existing checkpoints and train from scratch.",
+    )
+    args = parser.parse_args(argv)
+    _derive_defaults(args)
+    return args
+
+
+def find_latest_checkpoint(output_dir: str) -> str | None:
+    """Return the newest checkpoint directory matching checkpoint-NNN under output_dir."""
+    output_path = Path(output_dir)
+    if not output_path.is_dir():
+        return None
+    checkpoints = [
+        p for p in output_path.iterdir()
+        if p.is_dir() and re.match(r"^checkpoint-\d+$", p.name)
+    ]
+    if not checkpoints:
+        return None
+    latest = max(checkpoints, key=lambda p: int(p.name.split("-")[1]))
+    return str(latest)
+
+
+def _format_duration(seconds: float) -> str:
+    return time.strftime("%H:%M:%S", time.gmtime(seconds))
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+
+    output_dir = args.output_dir
+    ollama_name = args.ollama_name
+    dataset_path = args.dataset
 
     try:
         import torch  # noqa: F401
@@ -71,12 +160,22 @@ def main(argv=None) -> int:
         )
         return 2
 
-    if not os.path.exists(args.dataset):
-        print(f"error: dataset not found: {args.dataset}", file=sys.stderr)
+    if not os.path.exists(dataset_path):
+        print(f"error: dataset not found: {dataset_path}", file=sys.stderr)
         return 2
 
+    print(f"[setup] dialect:    {args.dialect}")
     print(f"[setup] base model: {args.base_model}")
-    print(f"[setup] dataset:    {args.dataset}")
+    print(f"[setup] dataset:    {dataset_path}")
+
+    checkpoint_to_resume = None
+    should_resume = args.resume and not args.force_no_resume
+    if should_resume:
+        checkpoint_to_resume = find_latest_checkpoint(output_dir)
+        if checkpoint_to_resume:
+            print(f"[setup] resuming from checkpoint: {checkpoint_to_resume}")
+
+    print(f"[setup] output dir: {output_dir}")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.base_model,
         max_seq_length=MAX_SEQ_LENGTH,
@@ -92,7 +191,7 @@ def main(argv=None) -> int:
         use_gradient_checkpointing="unsloth",
     )
 
-    dataset = load_dataset("json", data_files=args.dataset, split="train")
+    dataset = load_dataset("json", data_files=dataset_path, split="train")
     print(f"[setup] {len(dataset)} training samples")
 
     def to_text(example):
@@ -120,25 +219,96 @@ def main(argv=None) -> int:
             fp16=True,
             bf16=False,
             seed=42,
-            output_dir=args.output_dir,
+            output_dir=output_dir,
             report_to="none",
         ),
     )
-    trainer.train()
 
-    adapter_dir = os.path.join(args.output_dir, "adapter")
-    gguf_dir = os.path.join(args.output_dir, "gguf")
+    start_time = time.perf_counter()
+    if checkpoint_to_resume:
+        train_result = trainer.train(resume_from_checkpoint=True)
+    else:
+        train_result = trainer.train()
+    elapsed = time.perf_counter() - start_time
+    samples_per_second = train_result.metrics.get("train_samples_per_second")
+    final_loss = train_result.metrics.get("train_loss")
+
+    print("\n[stats] training finished")
+    print(f"  elapsed time:       {_format_duration(elapsed)}")
+    if samples_per_second is not None:
+        print(f"  samples/second:     {samples_per_second:.3f}")
+    if final_loss is not None:
+        print(f"  final train loss:   {final_loss:.4f}")
+    else:
+        history = trainer.state.log_history
+        if history and "loss" in history[-1]:
+            print(f"  final logged loss:  {history[-1]['loss']:.4f}")
+
+    adapter_dir = os.path.join(output_dir, "adapter")
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
     print(f"[save] LoRA adapter -> {adapter_dir}")
 
-    print(f"[save] exporting GGUF ({args.gguf_quant}) -> {gguf_dir}")
-    model.save_pretrained_gguf(gguf_dir, tokenizer,
-                               quantization_method=args.gguf_quant)
+    # GGUF export: merge + convert in a local temp directory to avoid
+    # partial writes on Google Drive (a FUSE mount). Unsloth creates output
+    # in a sibling directory named f"{{tmp}}_gguf". Scan both the tmp dir
+    # and its sibling for .gguf files and copy them to Drive.
+    gguf_drive_dir = os.path.join(output_dir, "gguf")
+    os.makedirs(gguf_drive_dir, exist_ok=True)
 
-    modelfile_path = os.path.join(args.output_dir, "Modelfile")
-    gguf_files = [f for f in os.listdir(gguf_dir) if f.endswith(".gguf")]
-    gguf_name = gguf_files[0] if gguf_files else "model.gguf"
+    tmp_gguf_containers: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="unsloth_gguf_") as tmp_gguf:
+        tmp_gguf_containers.append(tmp_gguf)
+        print(f"[gguf] merging to local temp: {tmp_gguf}")
+        print(f"[gguf] quantification: {args.gguf_quant}")
+        try:
+            model.save_pretrained_gguf(
+                tmp_gguf, tokenizer,
+                quantization_method=args.gguf_quant,
+            )
+        except Exception as exc:
+            print(f"[gguf] WARNING: conversion failed: {exc}", file=sys.stderr)
+            print("[gguf] The LoRA adapter was saved and can be merged manually.")
+            print("[gguf] To convert manually on Colab, run:")
+            print("  from unsloth import FastLanguageModel")
+            print("  model, tokenizer = FastLanguageModel.from_pretrained(...)")
+            print("  model.save_pretrained_gguf('/tmp/model', tokenizer, 'q4_k_m')")
+            print(f"  !cp /tmp/model/*.gguf {gguf_drive_dir}/")
+            return 1
+
+        # Unsloth may create a sibling directory with the actual files.
+        sibling = tmp_gguf + "_gguf"
+        if os.path.isdir(sibling):
+            tmp_gguf_containers.append(sibling)
+
+        # Copy all .gguf files found to Drive.
+        gguf_copied = 0
+        for container in tmp_gguf_containers:
+            for fname in os.listdir(container):
+                if fname.endswith(".gguf"):
+                    src = os.path.join(container, fname)
+                    dst = os.path.join(gguf_drive_dir, fname)
+                    shutil.copy2(src, dst)
+                    gguf_copied += 1
+                    size_mb = os.path.getsize(dst) / (1024 * 1024)
+                    print(f"[gguf] copied to Drive: {fname} ({size_mb:.0f} MB)")
+
+        if gguf_copied == 0:
+            print("[gguf] WARNING: no .gguf files found after merge",
+                  file=sys.stderr)
+            return 1
+
+    # Write the Ollama Modelfile pointing at the GGUF.
+    modelfile_path = os.path.join(output_dir, "Modelfile")
+    gguf_files = [f for f in os.listdir(gguf_drive_dir) if f.endswith(".gguf")]
+    # Prefer the quantized file (smaller) over f16.
+    gguf_name = "model.gguf"
+    for f in gguf_files:
+        if args.gguf_quant.upper() in f.upper():
+            gguf_name = f
+            break
+    if gguf_name == "model.gguf" and gguf_files:
+        gguf_name = gguf_files[0]
     with open(modelfile_path, "w", encoding="utf-8") as fh:
         fh.write(
             f"FROM ./{gguf_name}\n"
@@ -149,15 +319,15 @@ def main(argv=None) -> int:
 
     print(
         "\nNext steps on the Mac app host:\n"
-        "  1. Download the outputs/gguf/ folder + outputs/Modelfile.\n"
+        "  1. Download the outputs/<dialect>/gguf/ folder + outputs/<dialect>/Modelfile.\n"
         "  2. Place the Modelfile next to the .gguf file, then:\n"
-        f"       ollama create {args.ollama_name} -f Modelfile\n"
+        f"       ollama create {ollama_name} -f Modelfile\n"
         "  3. In the app .env set:\n"
         "       LLM_PROVIDER=ollama\n"
-        f"       OLLAMA_MODEL={args.ollama_name}:latest\n"
+        f"       OLLAMA_MODEL={ollama_name}:latest\n"
         "  4. Run the app; Arabic scripts now come from the fine-tuned model.\n"
         "  5. Compare against the base model with:\n"
-        f"       python finetuning/eval_ab.py --ft-model {args.ollama_name}:latest\n"
+        f"       python finetuning/eval_ab.py --ft-model {ollama_name}:latest\n"
     )
     return 0
 

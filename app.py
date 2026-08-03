@@ -27,6 +27,7 @@ from llm import rewrite_script
 from tts import create_tts_pipeline, synthesize
 from stt import create_stt_pipeline, transcribe
 from content_fetcher import fetch_content
+from preprocess_arabic import normalize_arabic
 
 os.makedirs("logs", exist_ok=True)
 os.makedirs("output", exist_ok=True)
@@ -43,12 +44,24 @@ if not logger.handlers:
     logger.addHandler(fh)
 
 def sanitize_text(text: str) -> str:
-    """Cleans up LLM artifacts, strictly converts pause tags, and prevents TTS spelling errors."""
+    """Cleans up LLM artifacts, inserts silence breaks, and normalizes Arabic for TTS."""
+    # Insert silence at sentence boundaries (periods, question marks, exclamation marks,
+    # new paragraphs) so the TTS has natural pacing even without [pause] markers.
+    # Three consecutive newlines = paragraph break → longer pause.
+    text = re.sub(r'\n{3,}', ' <<SILENCE3000MS>> ', text)
+    # Two newlines = section break → medium pause.
+    text = re.sub(r'\n{2,}', ' <<SILENCE2000MS>> ', text)
+    # Single newline = line break → short pause.
+    text = re.sub(r'\n', ' <<SILENCE1000MS>> ', text)
+
+    # Sentence-ending punctuation → short pause if not already followed by a marker.
+    text = re.sub(r'(?<=[.!?])\s+(?!<<SILENCE)', ' <<SILENCE800MS>> ', text)
+
     # Convert duration pause tags: [pause:2s] -> <<SILENCE2000MS>>
     text = re.sub(
-        r'\[pause(?:[:=](\d+)s)?\]', 
-        lambda m: f"<<SILENCE{min(5000, max(200, int(m.group(1))*1000 if m.group(1) else 1500))}MS>>", 
-        text, 
+        r'\[pause(?:[:=](\d+)s)?\]',
+        lambda m: f"<<SILENCE{min(5000, max(200, int(m.group(1))*1000 if m.group(1) else 1500))}MS>>",
+        text,
         flags=re.IGNORECASE
     )
     # Convert action tags to 1-second silence markers (English + Arabic)
@@ -58,13 +71,37 @@ def sanitize_text(text: str) -> str:
         text,
         flags=re.IGNORECASE,
     )
-    
-    # Fix 3: Strip elongated onomatopoeias (shhhhh, sssss, hmmmm) to prevent TTS from spelling them letter-by-letter
+
+    # Strip elongated onomatopoeias (shhhhh, sssss, hmmmm) to prevent TTS from spelling them letter-by-letter
     text = re.sub(r'\b(shh+|sss+|mmm+|zzz+|hmm+)\b', '<<SILENCE1000MS>>', text, flags=re.IGNORECASE)
-    
+
+    # Strip YouTube-style call-to-action phrases that the model learned from training data.
+    text = re.sub(
+        r'(?i)(لا\s*تنسوا\s*(اشتراك|لايك|متابعه|تعليق).*?[.!]|'
+        r'اشتركوا\s*في\s*القناه.*?[.!]|'
+        r'شاركونا\s*[^.!]*[.!]|'
+        r'اعملوا\s*(لايك|متابعه|اشتراك).*?[.!]|'
+        r'what\s*do\s*you\s*think.*?[.!]|'
+        r'let\s*me\s*know.*?[.!])',
+        '<<SILENCE1500MS>>',
+        text,
+    )
+
     # Strip any remaining unhandled bracket tags and formatting asterisks to prevent TTS noise
     text = re.sub(r'\[.*?\]', '', text)
-    text = re.sub(r'[\*\_]', '', text) 
+    text = re.sub(r'[\*\_]', '', text)
+
+    # Normalize Arabic orthography (unifies Alifs, removes tatweel, emoji, etc.)
+    text = normalize_arabic(text)
+
+    # Collapse multiple consecutive silence markers.
+    while re.search(r'<<SILENCE\d+MS>>\s*<<SILENCE\d+MS>>', text):
+        text = re.sub(
+            r'<<SILENCE(\d+)MS>>\s*<<SILENCE(\d+)MS>>',
+            lambda m: f"<<SILENCE{min(5000, int(m.group(1)) + int(m.group(2)))}MS>>",
+            text,
+        )
+
     return text.strip()
 
 ENGLISH_VOICE_CATEGORIES = {
