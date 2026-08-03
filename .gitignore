@@ -41,3 +41,6 @@ finetuning/data/ingested/
 finetuning/data/training/
 # Legacy synthetic dataset (superseded by YouTube ingestion pipeline)
 finetuning/data/arabic_asmr_sft.jsonl
+
+# Notebooks (Colab artifacts, not core pipeline code)
+finetuning/notebooks/
