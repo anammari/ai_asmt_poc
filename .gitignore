@@ -24,6 +24,7 @@ asmr_sessions.log
 *.md
 !README.md
 !finetuning/README.md
+!CLAUDE.md
 
 # Ignore conversation and QA artifacts
 prompt_*_all_conversations.txt
