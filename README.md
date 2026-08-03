@@ -139,12 +139,13 @@ uv run python app.py
   - **🔄 Re-Synthesize (Use Existing Script)** regenerates audio from the cached sanitized script without re-calling the LLM.
   - A session log is written to `logs/asmr_session_<session_id>.log` including transcribed prompt, raw script, and sanitized script.
 
-## Test Case: جلسة المطر الهادئ (Arabic Rain Session)
+## Test Case: Arabic Storytelling ASMR
 
-Use the following prompt to validate an end-to-end Arabic run:
+Use the following prompt to validate an end-to-end Arabic run with the
+fine-tuned Syrian model:
 
 ```text
-صِف لي صوتاً هادئاً للمطر يلمس النافذة ببطء، وارسم لي مشهداً من الهدوء والسكينة لكي أنام
+احكيلي قصة عن بنت بتعيش بقرية صغيرة وتكتشف غابة جديدة مليانة أشجار وزهور والفراشات عم تحوم حواليها
 ```
 
 ### Manual test steps
