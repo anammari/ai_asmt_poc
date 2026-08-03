@@ -171,7 +171,7 @@ class TestFishBackendInApp(unittest.TestCase):
 
         # Marker conversion + whisper delivery prefix + WAV sample rate request
         text_sent = captured["json"]["text"]
-        self.assertIn("[long-break]", text_sent)
+        self.assertIn("[long pause]", text_sent)
         self.assertNotIn("<<SILENCE", text_sent)
         self.assertTrue(text_sent.startswith("[whispering] "))
         self.assertEqual(captured["json"]["format"], "wav")
