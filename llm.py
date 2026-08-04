@@ -161,8 +161,12 @@ def rewrite_script(
     user_info: str = "",
     language: str = "English",
 ) -> str:
-    provider = provider or os.getenv("LLM_PROVIDER", "ollama")
     is_arabic = "arabic" in language.strip().lower()
+    if provider is None:
+        provider = os.getenv(
+            "ARABIC_LLM_PROVIDER" if is_arabic else "ENGLISH_LLM_PROVIDER",
+            "ollama",
+        )
     target_word_count = target_minutes * 85
 
     system_msg = (
@@ -204,11 +208,12 @@ def rewrite_script(
     if context_text.strip():
         user_msg += f"Background Context Information:\n{context_text.strip()}"
 
-    if is_arabic:
-        provider = "gemini"
-
     if provider == "ollama":
-        return _call_ollama(system_msg, user_msg)
+        ollama_model = os.getenv(
+            "ARABIC_OLLAMA_MODEL" if is_arabic else "ENGLISH_OLLAMA_MODEL",
+            "arabic-asmr-syria:latest" if is_arabic else "ministral-3:8b",
+        )
+        return _call_ollama(system_msg, user_msg, model=ollama_model)
     elif provider == "openai":
         try:
             return _call_openai(system_msg, user_msg)
@@ -227,9 +232,9 @@ def rewrite_script(
 
     return _local_fallback_script(user_prompt)
 
-def _call_ollama(system_msg: str, user_msg: str) -> str:
+def _call_ollama(system_msg: str, user_msg: str, model: str | None = None) -> str:
     base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = os.getenv("OLLAMA_MODEL", "ministral-3:8b")
+    model = model or os.getenv("OLLAMA_MODEL", "ministral-3:8b")
     
     payload = {
         "model": model,
@@ -261,7 +266,7 @@ def _call_ollama(system_msg: str, user_msg: str) -> str:
 def _call_openai(system_msg: str, user_msg: str) -> str:
     raise NotImplementedError(
         "OpenAI provider is not yet implemented. "
-        "Set LLM_PROVIDER=gemini or LLM_PROVIDER=ollama in .env."
+        "Set ARABIC_LLM_PROVIDER or ENGLISH_LLM_PROVIDER in .env."
     )
 
 def _call_gemini(system_msg: str, user_msg: str) -> str:

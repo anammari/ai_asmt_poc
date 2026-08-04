@@ -55,7 +55,7 @@ def ask_ollama(base_url: str, model: str, topic: str, timeout: int = 120) -> str
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Base vs fine-tuned Arabic ASMR A/B eval.")
     parser.add_argument("--base-model",
-                        default=os.getenv("OLLAMA_MODEL", "ministral-3:8b"))
+                        default=os.getenv("ARABIC_OLLAMA_MODEL", "arabic-asmr-syria:latest"))
     parser.add_argument("--ft-model", default="arabic-asmr:latest")
     parser.add_argument("--base-url",
                         default=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))

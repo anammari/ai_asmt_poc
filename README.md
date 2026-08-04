@@ -20,8 +20,10 @@ cp .env.example .env
 Key `.env` settings:
 
 ```env
-# LLM Provider Selection: "gemini", "openai", or "ollama"
-LLM_PROVIDER=gemini
+# English LLM Provider: "gemini", "openai", or "ollama"
+ENGLISH_LLM_PROVIDER=ollama
+# Arabic LLM Provider: "gemini" or "ollama" (defaults to ollama)
+ARABIC_LLM_PROVIDER=ollama
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_FALLBACK_MODELS=gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest
@@ -198,7 +200,7 @@ action points: [`finetuning/README.md`](finetuning/README.md).
 ```bash
 uv run python finetuning/build_dataset.py --count 60   # local, needs GEMINI_API_KEY
 # then train on Colab (T4), export GGUF, `ollama create arabic-asmr -f Modelfile`
-# and set LLM_PROVIDER=ollama + OLLAMA_MODEL=arabic-asmr:latest
+# and set ARABIC_LLM_PROVIDER=ollama + ARABIC_OLLAMA_MODEL=arabic-asmr:latest
 ```
 
 ## Project Structure

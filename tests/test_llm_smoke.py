@@ -206,13 +206,13 @@ class TestLlmSmoke(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 llm.rewrite_script(context_text="rain", user_prompt="calm rain", provider="gemini")
 
-    def test_arabic_forces_gemini_provider(self):
+    def test_arabic_respects_arabic_llm_provider(self):
         with patch("llm._call_gemini", return_value="gemini script") as mock_gemini, \
-             patch("llm._call_ollama") as mock_ollama:
+             patch("llm._call_ollama") as mock_ollama, \
+             patch.dict(os.environ, {"ARABIC_LLM_PROVIDER": "gemini"}):
             out = llm.rewrite_script(
                 context_text="",
                 user_prompt="صوت المطر",
-                provider="ollama",
                 language="Arabic (العربية)",
             )
         mock_gemini.assert_called_once()
@@ -251,7 +251,7 @@ class TestLlmSmoke(unittest.TestCase):
     def test_call_openai_raises_not_implemented(self):
         with self.assertRaises(NotImplementedError) as ctx:
             llm._call_openai("sys", "user")
-        self.assertIn("LLM_PROVIDER=gemini", str(ctx.exception))
+        self.assertIn("ARABIC_LLM_PROVIDER", str(ctx.exception))
 
 
 if __name__ == "__main__":

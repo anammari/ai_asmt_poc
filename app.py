@@ -125,10 +125,11 @@ ARABIC_VOICES = {
     "Whispering": {
         "ASMR 1 (Arabic Female)": "fish_0de68eaa0cc5438389b82bba728c8e39",
         "ASMR 2 (Arabic Female)": "fish_2689bc84ab944610af10bf64e586684a",
+        "ASMR 3 (Arabic Female)": "fish_f276af83bc3c421595e27b80304f8ba0",
     },
     "Soft Spoken": {
-        "ASMR 3 (Arabic Female)": "fish_7eee0787bf1a476fb0864270853e344a",
-        "ASMR 4 (Arabic Female)": "fish_4ac8915eb1e04bb5a46d1e1889222f75",
+        "ASMR 4 (Arabic Female)": "fish_7eee0787bf1a476fb0864270853e344a",
+        "ASMR 5 (Arabic Female)": "fish_4ac8915eb1e04bb5a46d1e1889222f75",
     },
 }
 

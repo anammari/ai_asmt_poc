@@ -53,16 +53,18 @@ class TestAppSmoke(unittest.TestCase):
         voices = app.get_available_voices("Arabic (العربية)", "Whispering")
         self.assertIn("ASMR 1 (Arabic Female)", voices)
         self.assertIn("ASMR 2 (Arabic Female)", voices)
-        self.assertNotIn("ASMR 3 (Arabic Female)", voices)
+        self.assertIn("ASMR 3 (Arabic Female)", voices)
         self.assertNotIn("ASMR 4 (Arabic Female)", voices)
+        self.assertNotIn("ASMR 5 (Arabic Female)", voices)
         self.assertTrue(all(v.startswith("fish_") for v in voices.values()))
 
     def test_get_available_voices_for_arabic_soft_spoken(self):
         voices = app.get_available_voices("Arabic (العربية)", "Soft Spoken")
-        self.assertIn("ASMR 3 (Arabic Female)", voices)
         self.assertIn("ASMR 4 (Arabic Female)", voices)
+        self.assertIn("ASMR 5 (Arabic Female)", voices)
         self.assertNotIn("ASMR 1 (Arabic Female)", voices)
         self.assertNotIn("ASMR 2 (Arabic Female)", voices)
+        self.assertNotIn("ASMR 3 (Arabic Female)", voices)
 
     def test_get_available_voices_for_english_keeps_tone_filter(self):
         voices = app.get_available_voices("English", "Whispering")
