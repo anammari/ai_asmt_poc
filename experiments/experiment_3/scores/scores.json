@@ -1,0 +1,448 @@
+{
+  "base_url": "http://localhost:11434",
+  "inputs": {
+    "models": [
+      "command-r7b-arabic:latest"
+    ],
+    "duration_minutes": 5,
+    "words_per_minute": 85,
+    "vocal_tone": "Whispering",
+    "baseline_prompt": "You are an expert ASMR scriptwriter generating scripts for an automated text-to-speech engine.\nYour goal is write a script that takes exactly 5 minutes to speak slowly (strictly aim for ~425 words).\nThe REQUIRED vocal tone is: WHISPERING.\nLanguage rule: Write the spoken script in Arabic only using {DIALECT_RULE}.\nWrite using words that emphasize sibilance (s, sh, f, th, h) and highly intimate, breathy pacing.\nCRITICAL RULES:\n1. ONLY output the spoken script. NO titles, NO introductions, NO concluding remarks.\n2. NO meta-text, NO asterisks, NO markdown formatting (like **bold** or *italics*). Do NOT use quotes.\n3. FISH AUDIO PAUSE COMPATIBILITY: Use ONLY Fish Audio-compatible pause tags: [pause], [pause:2s], [pause:3s], [pause:4s]. Write them exactly as shown with NO spaces (e.g. [pause:3s], never [pause: 3s]). Do NOT use [break], [long-break], or any other bracket tags.\n4. NEVER use elongated words like 'shhhhh', 'sssss', or 'hmmmm'. The TTS engine will spell them out letter-by-letter. Use standard words only.\n5. RELEVANCE: You MUST stay strictly and richly on-topic to the User Instructions/Topic. Every sentence should serve the requested story.\n6. PERSONAL ATTENTION: You have been provided with the User's Personal Info. You MUST weave these details (name, age, children, hobbies) naturally and prominently into the script so the listener feels personally addressed.\n7. STRUCTURE: Divide the script into 4-6 paragraphs separated by blank lines. Each paragraph should be 2-3 sentences.\n8. VARY PAUSE DURATIONS: Use [pause], [pause:2s], [pause:3s], and [pause:4s] throughout — not just the default [pause]. This creates natural pacing.",
+    "improved_prompt": "You are an expert ASMR scriptwriter generating scripts for an automated text-to-speech engine.\nYour goal is write a script that takes exactly 5 minutes to speak slowly (strictly aim for ~425 words).\nThe script MUST reach the target word count (~425 words) — do NOT finish early. Expand with sensory detail, dialogue, and scene-setting to reach the target.\nThe REQUIRED vocal tone is: WHISPERING.\nLanguage rule: Write the spoken script in Arabic only using {DIALECT_RULE}.\nDIALECT FIDELITY (CRITICAL): The ENTIRE script — every sentence of BOTH the narration and the dialogue — must be written in {DIALECT_RULE}. Do NOT write narration in Standard/Formal Arabic while only the dialogue uses the dialect. Sustain the requested dialect consistently from the first word to the last, using {DIALECT_IDIOM} vocabulary, word order, and everyday speech patterns throughout.\nWrite using words that emphasize sibilance (s, sh, f, th, h) and highly intimate, breathy pacing.\nCRITICAL RULES:\n1. ONLY output the spoken script. NO titles, NO introductions, NO concluding remarks.\n2. NO meta-text, NO asterisks, NO markdown formatting (like **bold** or *italics*). Do NOT use quotes.\n3. FISH AUDIO PAUSE COMPATIBILITY: Use ONLY Fish Audio-compatible pause tags: [break] for a brief pause in speech, or [long-break] for an extended pause in speech. Choose [break] or [long-break] based on context (e.g. [break] between short clauses, [long-break] between paragraphs or before a new scene). Do NOT use [pause], [pause:2s], [pause:3s], [pause:4s], or any other bracket tags.\n4. NEVER use elongated words like 'shhhhh', 'sssss', or 'hmmmm'. The TTS engine will spell them out letter-by-letter. Use standard words only.\n5. RELEVANCE: You MUST stay strictly and richly on-topic to the User Instructions/Topic. Every sentence should serve the requested story.\n6. PERSONAL ATTENTION: You have been provided with the User's Personal Info. Address the listener directly and by name. Weave the provided personal details (e.g. name, age, family, work, hobbies) naturally and prominently throughout the script — not just once — so the listener feels personally addressed. If the info mentions family or loved ones, frame the story as one told to them.\n7. STRUCTURE: Divide the script into 5-6 paragraphs of roughly equal length, separated by blank lines.\n8. RICHNESS: Use vivid sensory language (sights, sounds, smells, textures). Include dialogue and a clear narrative arc: introduction, discovery, encounter, lesson, resolution. Use natural {DIALECT_IDIOM} idioms and expressions to make the story feel authentic.\n9. VARY PAUSES: Use a mix of [break] and [long-break] throughout — not just one — to create natural pacing.",
+    "dialects": {
+      "standard": {
+        "rule": "Standard Arabic (no dialect)",
+        "idiom": "Standard Arabic",
+        "topic": "احكِ لي قصة عن فتاة صغيرة تعيش في قرية هادئة، تكتشف ذات يوم غابة جديدة لم يرها أحد من قبل، مليئة بالأشجار العالية والزهور الملونة، والفراشات تحوم حولها، وتجد فيها نهراً صافياً وحيوانات صغيرة لطيفة، وتتعلم درساً عن الشجاعة والصداقة.",
+        "about_you": "اسمي جون. عمري 38 سنة. لدي طفلان: سارة (8 سنوات) وعمر (5 سنوات). أعمل مهندس برمجيات. أحب القراءة والطبيعة والمشي. كثيراً ما أقرأ لأطفالي قصصاً قبل النوم، وأحب أن نحكي عن الغابات والمغامرات."
+      },
+      "syrian": {
+        "rule": "Syrian/Levantine Arabic dialect",
+        "idiom": "Syrian/Levantine",
+        "topic": "احكيلي قصة عن بنت صغيرة بتعيش بقرية هادية، ويوم من الأيام بتكتشف غابة جديدة ما حدا شافها من قبل، مليانة أشجار عالية وزهور ملونة، والفراشات عم تحوم حواليها، وبتلاقي فيها نهر صافي وحيوانات صغيرة حلوة، وبتتعلم درس عن الشجاعة والصداقة.",
+        "about_you": "اسمي جون. عمري 38 سنة. عندي طفلين: سارة (8 سنين) وعمر (5 سنين). بشتغل مهندس برمجيات. بحب القراءة والطبيعة والمشي. كتير بقرا إلهن قصص قبل النوم، وبحب نحكي عن الغابات والمغامرات."
+      },
+      "egyptian": {
+        "rule": "Egyptian Arabic dialect",
+        "idiom": "Egyptian",
+        "topic": "احكيلي قصة عن بنت صغيرة عايشة في قرية هادية، ويوم من الأيام بتكتشف غابة جديدة محدش شافها قبل كده، مليانة أشجار عالية وزهور ملونة، والفراشات بتطير حواليها، وبتلاقي فيها نهر صافي وحيوانات صغيرة لطيفة، وبتتعلم درس عن الشجاعة والصداقة.",
+        "about_you": "اسمي جون. عمري 38 سنة. عندي طفلين: سارة (8 سنين) وعمر (5 سنين). بشتغل مهندس برمجيات. بحب القراءة والطبيعة والمشي. كتير بقرا إلهم قصص قبل النوم، وبحب نحكي عن الغابات والمغامرات."
+      }
+    }
+  },
+  "model": "command-r7b-arabic:latest",
+  "dialects": {
+    "standard": {
+      "baseline": {
+        "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/experiment_3/transcripts/standard/baseline.txt",
+        "richness": {
+          "word_count": 298,
+          "score": 4
+        },
+        "dialect": {
+          "markers_hit": [
+            "التي",
+            "الذي",
+            "كانت",
+            "أيضاً"
+          ],
+          "score": 5
+        },
+        "relevance": {
+          "story_keywords_hit": [
+            "بنت",
+            "فتاة",
+            "قرية",
+            "غابة",
+            "أشجار",
+            "زهور",
+            "فراشات",
+            "نهر",
+            "حيوانات"
+          ],
+          "score": 5
+        },
+        "personal_attention": {
+          "about_keywords_hit": [
+            "جون",
+            "سارة",
+            "قصص"
+          ],
+          "score": 5
+        },
+        "timing": {
+          "target_words": 425,
+          "word_count": 298,
+          "pct_error": 29.9,
+          "score": 3
+        },
+        "pauses": {
+          "break_count": 0,
+          "long_break_count": 0,
+          "varied": false,
+          "invalid_pause_tags": [
+            "[pause:2s]",
+            "[pause:3s]",
+            "[pause:4s]",
+            "[pause]",
+            "[pause:2s]",
+            "[pause]"
+          ],
+          "elongated_words": [],
+          "cta_hits": [],
+          "meta_hits": [],
+          "score": 1
+        },
+        "overall": 3.83,
+        "human": {
+          "richness": 4,
+          "dialect": 5,
+          "relevance": 5,
+          "personal_attention": 4,
+          "timing": 3,
+          "pauses": 1,
+          "overall": 3.67,
+          "notes": "Clean MSA, rich sensory + animal-friend lesson; John named as proud father, Sara protagonist; all pause tags invalid [pause:Ns]; under-length."
+        }
+      },
+      "improved": {
+        "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/experiment_3/transcripts/standard/improved.txt",
+        "richness": {
+          "word_count": 375,
+          "score": 5
+        },
+        "dialect": {
+          "markers_hit": [
+            "التي",
+            "الذي",
+            "كانت",
+            "لقد"
+          ],
+          "score": 5
+        },
+        "relevance": {
+          "story_keywords_hit": [
+            "فتاة",
+            "قرية",
+            "غابة",
+            "أشجار",
+            "زهور",
+            "فراشات",
+            "نهر",
+            "حيوانات"
+          ],
+          "score": 5
+        },
+        "personal_attention": {
+          "about_keywords_hit": [
+            "سارة",
+            "عمر",
+            "طبيعة"
+          ],
+          "score": 5
+        },
+        "timing": {
+          "target_words": 425,
+          "word_count": 375,
+          "pct_error": 11.8,
+          "score": 4
+        },
+        "pauses": {
+          "break_count": 5,
+          "long_break_count": 3,
+          "varied": true,
+          "invalid_pause_tags": [],
+          "elongated_words": [],
+          "cta_hits": [],
+          "meta_hits": [],
+          "score": 5
+        },
+        "overall": 4.83,
+        "human": {
+          "richness": 5,
+          "dialect": 5,
+          "relevance": 5,
+          "personal_attention": 3,
+          "timing": 4,
+          "pauses": 5,
+          "overall": 4.5,
+          "notes": "Rich MSA with arc + dialogue (Sara & Omar); John not named and story not told to him; valid varied [break]/[long-break]."
+        }
+      }
+    },
+    "syrian": {
+      "baseline": {
+        "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/experiment_3/transcripts/syrian/baseline.txt",
+        "richness": {
+          "word_count": 309,
+          "score": 4
+        },
+        "dialect": {
+          "markers_hit": [
+            "كتير",
+            "عم"
+          ],
+          "score": 5
+        },
+        "relevance": {
+          "story_keywords_hit": [
+            "بنت",
+            "قرية",
+            "غابة",
+            "أشجار",
+            "زهور",
+            "فراشات",
+            "نهر",
+            "حيوانات"
+          ],
+          "score": 5
+        },
+        "personal_attention": {
+          "about_keywords_hit": [
+            "جون",
+            "سارة",
+            "عمر",
+            "طبيعة",
+            "قصص"
+          ],
+          "score": 5
+        },
+        "timing": {
+          "target_words": 425,
+          "word_count": 309,
+          "pct_error": 27.3,
+          "score": 3
+        },
+        "pauses": {
+          "break_count": 0,
+          "long_break_count": 0,
+          "varied": false,
+          "invalid_pause_tags": [
+            "[pause:3s]",
+            "[pause]",
+            "[pause:2s]",
+            "[pause:4s]",
+            "[pause]"
+          ],
+          "elongated_words": [],
+          "cta_hits": [],
+          "meta_hits": [],
+          "score": 1
+        },
+        "overall": 3.83,
+        "human": {
+          "richness": 4,
+          "dialect": 4,
+          "relevance": 5,
+          "personal_attention": 4,
+          "timing": 3,
+          "pauses": 1,
+          "overall": 3.5,
+          "notes": "Genuine Syrian (هاد، عم ترقص، كتير، هاي); John addressed by name, Sara protagonist; all pause tags invalid [pause:Ns]; under-length."
+        }
+      },
+      "improved": {
+        "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/experiment_3/transcripts/syrian/improved.txt",
+        "richness": {
+          "word_count": 442,
+          "score": 5
+        },
+        "dialect": {
+          "markers_hit": [
+            "كتير",
+            "شو",
+            "عم"
+          ],
+          "score": 5
+        },
+        "relevance": {
+          "story_keywords_hit": [
+            "بنت",
+            "قرية",
+            "غابة",
+            "أشجار",
+            "زهور",
+            "فراشات",
+            "نهر",
+            "حيوانات"
+          ],
+          "score": 5
+        },
+        "personal_attention": {
+          "about_keywords_hit": [
+            "سارة",
+            "مهندس",
+            "برمجيات",
+            "قراءة",
+            "طبيعة"
+          ],
+          "score": 5
+        },
+        "timing": {
+          "target_words": 425,
+          "word_count": 442,
+          "pct_error": 4.0,
+          "score": 5
+        },
+        "pauses": {
+          "break_count": 1,
+          "long_break_count": 2,
+          "varied": true,
+          "invalid_pause_tags": [],
+          "elongated_words": [],
+          "cta_hits": [],
+          "meta_hits": [],
+          "score": 5
+        },
+        "overall": 5.0,
+        "human": {
+          "richness": 5,
+          "dialect": 5,
+          "relevance": 5,
+          "personal_attention": 4,
+          "timing": 5,
+          "pauses": 5,
+          "overall": 4.83,
+          "notes": "Genuinely Syrian throughout narration AND dialogue (هادية، بتعيش، شو، هل، عم، كتير، تيجي، رح); engineer-father + 8yo Sara woven in (John not named); rich sensory + dramatic arc; valid varied pauses."
+        }
+      }
+    },
+    "egyptian": {
+      "baseline": {
+        "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/experiment_3/transcripts/egyptian/baseline.txt",
+        "richness": {
+          "word_count": 323,
+          "score": 4
+        },
+        "dialect": {
+          "markers_hit": [
+            "إيه"
+          ],
+          "score": 4
+        },
+        "relevance": {
+          "story_keywords_hit": [
+            "بنت",
+            "قرية",
+            "غابة",
+            "أشجار",
+            "زهور",
+            "فراشات",
+            "نهر",
+            "حيوانات"
+          ],
+          "score": 5
+        },
+        "personal_attention": {
+          "about_keywords_hit": [
+            "جون",
+            "سارة",
+            "طبيعة"
+          ],
+          "score": 5
+        },
+        "timing": {
+          "target_words": 425,
+          "word_count": 323,
+          "pct_error": 24.0,
+          "score": 3
+        },
+        "pauses": {
+          "break_count": 0,
+          "long_break_count": 0,
+          "varied": false,
+          "invalid_pause_tags": [
+            "[pause:3s]",
+            "[pause:2s]",
+            "[pause:4s]",
+            "[pause]",
+            "[pause:3s]",
+            "[pause]"
+          ],
+          "elongated_words": [],
+          "cta_hits": [],
+          "meta_hits": [],
+          "score": 1
+        },
+        "overall": 3.67,
+        "human": {
+          "richness": 4,
+          "dialect": 5,
+          "relevance": 5,
+          "personal_attention": 4,
+          "timing": 3,
+          "pauses": 1,
+          "overall": 3.67,
+          "notes": "Strong Egyptian; John addressed, Sara + her brother; all pause tags invalid [pause:Ns]; under-length."
+        }
+      },
+      "improved": {
+        "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/experiment_3/transcripts/egyptian/improved.txt",
+        "richness": {
+          "word_count": 445,
+          "score": 5
+        },
+        "dialect": {
+          "markers_hit": [
+            "أوي",
+            "كده",
+            "ليه",
+            "إيه",
+            "محدش"
+          ],
+          "score": 5
+        },
+        "relevance": {
+          "story_keywords_hit": [
+            "بنت",
+            "قرية",
+            "غابة",
+            "أشجار",
+            "زهور",
+            "فراشات",
+            "نهر",
+            "حيوانات"
+          ],
+          "score": 5
+        },
+        "personal_attention": {
+          "about_keywords_hit": [
+            "جون",
+            "سارة",
+            "عمر",
+            "طبيعة",
+            "قصص"
+          ],
+          "score": 5
+        },
+        "timing": {
+          "target_words": 425,
+          "word_count": 445,
+          "pct_error": 4.7,
+          "score": 5
+        },
+        "pauses": {
+          "break_count": 3,
+          "long_break_count": 2,
+          "varied": true,
+          "invalid_pause_tags": [],
+          "elongated_words": [],
+          "cta_hits": [],
+          "meta_hits": [],
+          "score": 5
+        },
+        "overall": 5.0,
+        "human": {
+          "richness": 5,
+          "dialect": 5,
+          "relevance": 5,
+          "personal_attention": 4,
+          "timing": 5,
+          "pauses": 5,
+          "overall": 4.83,
+          "notes": "Strong Egyptian; John addressed by name, Sara/Omar + father-storytelling woven in (minor POV wobble); rich sensory + dialogue; valid varied pauses; near-perfect timing."
+        }
+      }
+    }
+  }
+}

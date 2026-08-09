@@ -21,12 +21,19 @@ application logic** — they reuse the app's `llm` module read-only.
   follows a requested Arabic dialect (Standard / Syrian / Egyptian) at 5 min, with a
   stricter system prompt (Fish Audio pause compatibility, personal attention, relevance).
   Includes a per-dialect model ranking.
+- **[experiment_3/](experiment_3/README.md)** — A/B an improved system prompt for
+  `command-r7b-arabic` only: corrects the Fish Audio pause tags (`[break]`/`[long-break]`
+  instead of unsupported `[pause:Ns]`), adds a dialect-fidelity rule (fixes a Syrian→MSA
+  regression), and targets richness, personal attention, and timing generically. Result
+  (v2 re-run): improved wins all three dialects (standard +0.83, syrian +1.33,
+  egyptian +1.17).
 
 ## How to run
 
 ```bash
 uv run python experiments/experiment_1/run_arabic_model_comparison.py
 uv run python experiments/experiment_2/run_dialect_comparison.py
+uv run python experiments/experiment_3/run_command_r7b_improved.py
 ```
 
-Both read `OLLAMA_BASE_URL` from `.env` (default `http://localhost:11434`).
+All read `OLLAMA_BASE_URL` from `.env` (default `http://localhost:11434`).
