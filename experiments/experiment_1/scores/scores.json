@@ -1,0 +1,366 @@
+{
+  "base_url": "http://localhost:11434",
+  "inputs": {
+    "models": [
+      "arabic-asmr-syria:latest",
+      "mostafaasey25/nile-chat-12b:q6_k",
+      "command-r7b-arabic:latest"
+    ],
+    "durations_minutes": [
+      1,
+      3,
+      5
+    ],
+    "language": "Arabic",
+    "vocal_tone": "Whispering",
+    "user_prompt": "احكيلي قصة عن بنت بتعيش بقرية صغيرة وتكتشف غابة جديدة مليانة أشجار وزهور والفراشات عم تحوم حواليها",
+    "about_you": "اسمي جون. عندي طفلين وكتير بقرا إلهن قصص قبل النوم",
+    "words_per_minute": 85
+  },
+  "models": {
+    "arabic-asmr-syria:latest": {
+      "durations": {
+        "1": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/arabic-asmr-syria_latest/1min.txt",
+          "timing": {
+            "target_words": 85,
+            "word_count": 94,
+            "pct_error": 10.6,
+            "score": 4
+          },
+          "pauses": {
+            "pause_count": 10,
+            "varied_durations": true,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 5
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون"
+            ],
+            "score": 5
+          },
+          "overall": 4.67
+        },
+        "3": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/arabic-asmr-syria_latest/3min.txt",
+          "timing": {
+            "target_words": 255,
+            "word_count": 141,
+            "pct_error": 44.7,
+            "score": 2
+          },
+          "pauses": {
+            "pause_count": 7,
+            "varied_durations": true,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [
+              "bracket-tag"
+            ],
+            "score": 4
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون",
+              "قصص",
+              "قبل النوم"
+            ],
+            "score": 5
+          },
+          "overall": 3.67
+        },
+        "5": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/arabic-asmr-syria_latest/5min.txt",
+          "timing": {
+            "target_words": 425,
+            "word_count": 125,
+            "pct_error": 70.6,
+            "score": 1
+          },
+          "pauses": {
+            "pause_count": 12,
+            "varied_durations": true,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 5
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون",
+              "قصص",
+              "قبل النوم"
+            ],
+            "score": 5
+          },
+          "overall": 3.67
+        }
+      }
+    },
+    "mostafaasey25/nile-chat-12b:q6_k": {
+      "durations": {
+        "1": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/mostafaasey25_nile-chat-12b_q6_k/1min.txt",
+          "timing": {
+            "target_words": 85,
+            "word_count": 44,
+            "pct_error": 48.2,
+            "score": 2
+          },
+          "pauses": {
+            "pause_count": 1,
+            "varied_durations": false,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 4
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون",
+              "قصص",
+              "قبل النوم"
+            ],
+            "score": 5
+          },
+          "overall": 3.67
+        },
+        "3": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/mostafaasey25_nile-chat-12b_q6_k/3min.txt",
+          "timing": {
+            "target_words": 255,
+            "word_count": 196,
+            "pct_error": 23.1,
+            "score": 3
+          },
+          "pauses": {
+            "pause_count": 0,
+            "varied_durations": false,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 2
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون"
+            ],
+            "score": 5
+          },
+          "overall": 3.33
+        },
+        "5": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/mostafaasey25_nile-chat-12b_q6_k/5min.txt",
+          "timing": {
+            "target_words": 425,
+            "word_count": 103,
+            "pct_error": 75.8,
+            "score": 1
+          },
+          "pauses": {
+            "pause_count": 0,
+            "varied_durations": false,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 2
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [],
+            "score": 4
+          },
+          "overall": 2.33
+        }
+      }
+    },
+    "command-r7b-arabic:latest": {
+      "durations": {
+        "1": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/command-r7b-arabic_latest/1min.txt",
+          "timing": {
+            "target_words": 85,
+            "word_count": 249,
+            "pct_error": 192.9,
+            "score": 1
+          },
+          "pauses": {
+            "pause_count": 6,
+            "varied_durations": true,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 5
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "قصص",
+              "قبل النوم"
+            ],
+            "score": 5
+          },
+          "overall": 3.67
+        },
+        "3": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/command-r7b-arabic_latest/3min.txt",
+          "timing": {
+            "target_words": 255,
+            "word_count": 178,
+            "pct_error": 30.2,
+            "score": 3
+          },
+          "pauses": {
+            "pause_count": 6,
+            "varied_durations": true,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [],
+            "score": 5
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "قرية",
+              "غابة",
+              "أشجار",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون"
+            ],
+            "score": 5
+          },
+          "overall": 4.33
+        },
+        "5": {
+          "transcript_file": "/Users/ahmadammari/PD/ai_asmr_poc/experiments/transcripts/command-r7b-arabic_latest/5min.txt",
+          "timing": {
+            "target_words": 425,
+            "word_count": 234,
+            "pct_error": 44.9,
+            "score": 2
+          },
+          "pauses": {
+            "pause_count": 1,
+            "varied_durations": false,
+            "elongated_words": [],
+            "cta_hits": [],
+            "meta_hits": [
+              "bracket-tag"
+            ],
+            "score": 3
+          },
+          "relevance": {
+            "story_keywords_hit": [
+              "بنت",
+              "قرية",
+              "غابة",
+              "أشجار",
+              "زهور",
+              "فراشات"
+            ],
+            "about_keywords_hit": [
+              "جون",
+              "طفلين",
+              "قبل النوم"
+            ],
+            "score": 5
+          },
+          "overall": 3.33
+        }
+      }
+    }
+  },
+  "human_scores": {
+    "arabic-asmr-syria:latest": {
+      "1": {"timing": 4, "relevance": 5, "pauses": 5, "overall": 4.67, "notes": "Strong. Weaves John + girl Lina + village/forest/flowers/butterflies. Varied pauses. Minor typo 'الزهور البغضة' (should be 'الجميلة')."},
+      "3": {"timing": 2, "relevance": 5, "pauses": 3, "overall": 3.33, "notes": "Good relevance (John, two daughters, bedtime). Malformed '[.pause]' tag and a 'JOHN:' label (meta-text) hurt pause adherence. Under-length (141 vs 255)."},
+      "5": {"timing": 1, "relevance": 5, "pauses": 4, "overall": 3.33, "notes": "Relevant (John, daughters, forest). Starts with Japanese katakana 'ジョン' artifact. Far under-length (125 vs 425)."}
+    },
+    "mostafaasey25/nile-chat-12b:q6_k": {
+      "1": {"timing": 2, "relevance": 5, "pauses": 2, "overall": 3.0, "notes": "Relevant (John, story, bedtime). Only 1 pause tag, not varied. Egyptian dialect. Under-length (44 vs 85)."},
+      "3": {"timing": 3, "relevance": 5, "pauses": 2, "overall": 3.33, "notes": "Relevant (John, girl Alaa, forest). ZERO pause tags; uses '...' and '-' instead. Egyptian dialect."},
+      "5": {"timing": 1, "relevance": 3, "pauses": 2, "overall": 2.0, "notes": "Story present but about-you (John/children) NOT woven in. ZERO pause tags. Far under-length (103 vs 425)."}
+    },
+    "command-r7b-arabic:latest": {
+      "1": {"timing": 1, "relevance": 5, "pauses": 5, "overall": 3.67, "notes": "Relevant (girl Jan, forest, children, bedtime). Varied pauses. Severely over-length (249 vs 85)."},
+      "3": {"timing": 3, "relevance": 5, "pauses": 3, "overall": 3.67, "notes": "Relevant (John, girl Sara, forest). Varied pauses BUT ends with meta-text 'هل تريد مني أن أواصل القصة؟' violating the no-meta rule."},
+      "5": {"timing": 2, "relevance": 5, "pauses": 3, "overall": 3.33, "notes": "Relevant (John, two children, bedtime). Pause tags malformed with space '[pause: 3s]' (won't be recognized by Fish Audio) + 'اسمي [جون]' bracket artifact."}
+    }
+  },
+  "model_overall": {
+    "arabic-asmr-syria:latest": {
+      "timing_mean": 2.33,
+      "relevance_mean": 5.0,
+      "pauses_mean": 4.0,
+      "overall": 3.78
+    },
+    "mostafaasey25/nile-chat-12b:q6_k": {
+      "timing_mean": 2.0,
+      "relevance_mean": 4.33,
+      "pauses_mean": 2.0,
+      "overall": 2.78
+    },
+    "command-r7b-arabic:latest": {
+      "timing_mean": 2.0,
+      "relevance_mean": 5.0,
+      "pauses_mean": 3.67,
+      "overall": 3.56
+    }
+  }
+}

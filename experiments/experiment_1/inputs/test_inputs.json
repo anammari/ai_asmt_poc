@@ -1,0 +1,13 @@
+{
+  "models": [
+    "arabic-asmr-syria:latest",
+    "mostafaasey25/nile-chat-12b:q6_k",
+    "command-r7b-arabic:latest"
+  ],
+  "durations_minutes": [1, 3, 5],
+  "language": "Arabic",
+  "vocal_tone": "Whispering",
+  "user_prompt": "احكيلي قصة عن بنت بتعيش بقرية صغيرة وتكتشف غابة جديدة مليانة أشجار وزهور والفراشات عم تحوم حواليها",
+  "about_you": "اسمي جون. عندي طفلين وكتير بقرا إلهن قصص قبل النوم",
+  "words_per_minute": 85
+}

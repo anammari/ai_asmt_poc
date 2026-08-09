@@ -25,6 +25,8 @@ asmr_sessions.log
 !README.md
 !finetuning/README.md
 !CLAUDE.md
+# Track experiment markdown (reports) while keeping app markdown ignored
+!experiments/**/*.md
 
 # Ignore conversation and QA artifacts
 prompt_*_all_conversations.txt
