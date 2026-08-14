@@ -47,3 +47,7 @@ finetuning/data/arabic_asmr_sft.jsonl
 
 # Notebooks (Colab artifacts, not core pipeline code)
 finetuning/notebooks/
+
+# Repomix packing tool (config + compiled output)
+repomix.config.json
+repomix-output.md
