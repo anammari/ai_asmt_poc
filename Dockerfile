@@ -5,9 +5,8 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install required system dependencies (espeak-ng for phonemization, ffmpeg for audio)
+# Install required system dependencies (ffmpeg for audio)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    espeak-ng \
     ffmpeg \
     git \
     curl \
@@ -30,12 +29,6 @@ ENV HF_HOME=/app/.cache/huggingface
 
 # Copy the rest of the application codebase
 COPY . .
-
-# =========================================================
-# BUILD-TIME MODEL PRE-LOADING
-# Bakes Kokoro-82M model weights directly into Docker image
-# =========================================================
-RUN uv run python -c "from tts import create_tts_pipeline; create_tts_pipeline()"
 
 # Ensure output directory exists for exported audio files
 RUN mkdir -p /app/output

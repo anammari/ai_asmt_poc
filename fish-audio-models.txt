@@ -1,0 +1,13 @@
+Language, Type, Model Id, Display, Used?
+Arabic, Whispering, 4866140585d14d8aaaebcea8c7f0876f, ASMR Syrian Female, No
+Arabic, Whispering, 26bf953181e14b92806a4b2754513fea, ASMR Egyptian Female 1, No
+Arabic, Whispering, f276af83bc3c421595e27b80304f8ba0, ASMR Egyptian Female 2, Yes
+Arabic, Whispering, 0de68eaa0cc5438389b82bba728c8e39, ASMR 1 (Arabic Female), Yes
+Arabic, Whispering, 2689bc84ab944610af10bf64e586684a, ASMR 2 (Arabic Female), Yes
+Arabic, Soft Spoken, 7eee0787bf1a476fb0864270853e344a, ASMR 4 (Arabic Female), Yes
+Arabic, Soft Spoken, 4ac8915eb1e04bb5a46d1e1889222f75, ASMR 5 (Arabic Female), Yes
+English, Soft Spoken, ca3007f96ae7499ab87d27ea3599956a, ASMR English Female 1, No 
+English, Soft Spoken, 3c97242aa71c44bdbc48713365768b2a, ASMR English Female 2, No
+English, Whispering, f06431add405433ba777a323911f0dfd, ASMR English Female 3, No
+English, Whispering, 084446cf1e7a4b16bafd19459ef12a06, ASMR English Female 4, No
+English, Whispering, efee6c804185420fb89955186451df85, ASMR English Female 5, No

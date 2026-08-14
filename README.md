@@ -5,8 +5,8 @@ An automated AI-driven pipeline designed to fetch web content or direct topic pr
 ## Features
 
 - **Content Ingestion** (`content_fetcher.py`): Fetches raw text or web articles directly from URLs.
-- **LLM Script Rewriting** (`llm.py`): Rewrites source material into calm, rhythmic, whispered scripts with auditory markers (`[soft breath]`, `[whisper]`). Supports Google Gemini or local Ollama models.
-- **Whisper Audio Synthesis** (`tts.py`): Synthesizes whisper-toned `.wav`/`.mp3` audio files using Kokoro-82M or Edge-TTS.
+- **LLM Script Rewriting** (`llm.py`): Rewrites source material into calm, rhythmic, whispered scripts with auditory markers (`[soft breath]`, `[whisper]`). English uses OpenRouter (`google/gemma-4-26b-a4b-it:free`); Arabic uses Google Gemini (or local Ollama).
+- **Whisper Audio Synthesis** (`tts.py`): Synthesizes whisper-toned `.wav` audio files for both English and Arabic using the Fish Audio `s2.1-pro-free` cloud API.
 - **Audio Processing** (`stt.py`): Transcribes audio inputs using Whisper for voice-guided feeds.
 
 ## Environment Configuration
@@ -20,17 +20,19 @@ cp .env.example .env
 Key `.env` settings:
 
 ```env
-# English LLM Provider: "gemini", "openai", or "ollama"
-ENGLISH_LLM_PROVIDER=ollama
+# English LLM Provider: "openrouter", "gemini", "openai", or "ollama"
+ENGLISH_LLM_PROVIDER=openrouter
 # Arabic LLM Provider: "gemini" or "ollama" (defaults to ollama)
 ARABIC_LLM_PROVIDER=ollama
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_MODEL=google/gemma-4-26b-a4b-it:free
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_FALLBACK_MODELS=gemini-2.5-flash,gemini-2.0-flash,gemini-flash-latest
 
-# TTS Engine Selection: "kokoro" or "edge-tts"
-TTS_ENGINE=kokoro
-KOKORO_VOICE=af_bella
+# TTS (Fish Audio) — used for BOTH English and Arabic
+FISH_AUDIO_API_KEY=your_fish_audio_api_key_here
+FISH_AUDIO_MODEL=s2.1-pro-free
 
 # Audio Output Path
 OUTPUT_DIR=./output
@@ -46,7 +48,7 @@ OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 ## Option 1: Running with Docker (Recommended)
 
-Docker packages all system dependencies (`espeak-ng`, `ffmpeg`, Python 3.12).
+Docker packages all system dependencies (`ffmpeg`, Python 3.12).
 
 ### 1. Build the Docker image
 
@@ -70,19 +72,7 @@ docker run --rm \
 
 ### 1. Prerequisites and system dependencies
 
-Ensure Python 3.12, `uv`, and `espeak-ng` (required phonemizer) are installed on your system:
-
-macOS:
-
-```bash
-brew install espeak-ng
-```
-
-Ubuntu/Debian:
-
-```bash
-sudo apt-get update && sudo apt-get install -y espeak-ng ffmpeg
-```
+Ensure Python 3.12 and `uv` are installed on your system.
 
 ### 2. Install dependencies
 
@@ -90,15 +80,7 @@ sudo apt-get update && sudo apt-get install -y espeak-ng ffmpeg
 uv sync
 ```
 
-### 3. Optional warmup / pre-download TTS weights
-
-You can optionally pre-download the Kokoro-82M model assets to your Hugging Face cache prior to running the app:
-
-```bash
-uv run python -c "from tts import create_tts_pipeline; create_tts_pipeline()"
-```
-
-### 4. Run application
+### 3. Run application
 
 ```bash
 uv run python app.py
@@ -134,7 +116,7 @@ uv run python app.py
 3. Verify expected behavior:
   - The app shows **Transcribed Instructions** based on your voice recording.
   - The generated script is sanitized before synthesis (formatting artifacts removed, pause tags converted to `<<SILENCE...MS>>` markers).
-  - If Gemini returns transient 429/500/503 errors, generation uses exponential backoff retries, then tries fallback Gemini models, then falls back to Ollama (or local minimal fallback if Ollama is unavailable).
+  - English generation uses OpenRouter (`google/gemma-4-26b-a4b-it:free`); on failure it falls back to Ollama, then to a local minimal fallback script. Arabic generation uses Gemini with exponential backoff retries and fallback models.
   - **View TTS-Ready Script** displays human-readable silence hints like *(Silence: 3000 ms)*.
   - Output audio plays in-app and includes real silent gaps where pause markers exist.
   - Multi-voice selection alternates voices across script paragraphs.
@@ -163,7 +145,7 @@ uv run python app.py
   - Set **Script Language** to **Arabic (العربية)**.
   - Enter the Arabic prompt above in **Arabic Written Prompt (النص العربي)** (voice input is not used).
   - (Optional) Fill **Optional: About You (Name, age, work, hobbies, etc.)** for personalized delivery.
-  - For **Vocal Tone Preference**, select **Whispering** (shows ASMR 1 & ASMR 2 voices) or **Soft Spoken** (shows ASMR 3 & ASMR 4 voices).
+  - For **Vocal Tone Preference**, select **Whispering** (shows the Arabic Whispering voices) or **Soft Spoken** (shows the Arabic Soft Spoken voices).
   - Select one or more voices from the available Arabic voice list; voices alternate per paragraph.
   - Set **Target Duration (Minutes)** to **3**.
   - Click **✨ Generate New ASMR**.
@@ -181,9 +163,10 @@ uv run python app.py
 
 ### 1. Fish Audio TTS backend (`fish_audio_tts.py`)
 
-The sole Arabic TTS backend. Uses Fish Audio `s2.1-pro-free` with inline
-S2 direction tags (`[whispering]`, `[soft]`, `[break]`). The app provides
-4 community ASMR voices filtered by vocal tone. Evaluate it standalone:
+The sole TTS backend for both English and Arabic. Uses Fish Audio
+`s2.1-pro-free` with inline S2 direction tags (`[whispering]`, `[soft]`,
+`[break]`). The app provides English and Arabic community ASMR voices
+filtered by vocal tone. Evaluate it standalone:
 
 ```bash
 # set FISH_AUDIO_API_KEY in .env first
@@ -212,9 +195,9 @@ ai_asmr_poc/
 |- content_fetcher.py                # Fetches source context and handles fallback behavior.
 |- llm.py                            # Local Ollama rewrite client with endpoint fallback.
 |- stt.py                            # Whisper-based speech-to-text preprocessing and inference.
-|- tts.py                            # Kokoro + Fish Audio TTS synthesis with silence marker support.
+|- tts.py                            # Fish Audio TTS synthesis with silence marker support.
 |- preprocess_arabic.py              # Arabic normalization + diacritization (tashkeel).
-|- fish_audio_tts.py                 # Fish Audio s2.1-pro-free Arabic ASMR TTS client.
+|- fish_audio_tts.py                 # Fish Audio s2.1-pro-free ASMR TTS client (English + Arabic).
 |- finetuning/                       # Unsloth Arabic ASMR SFT pipeline (see finetuning/README.md).
 |- Dockerfile                        # Container build with runtime dependencies.
 |- pyproject.toml                    # Python project metadata and dependencies.

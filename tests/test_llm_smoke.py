@@ -242,16 +242,131 @@ class TestLlmSmoke(unittest.TestCase):
             )
         args, _ = mock_gemini.call_args
         system_msg = args[0]
-        self.assertIn("4-6 paragraphs", system_msg)
+        self.assertIn("5-6 paragraphs", system_msg)
         self.assertIn("VARY PAUSE DURATIONS", system_msg)
         self.assertIn("[pause:2s]", system_msg)
         self.assertIn("[pause:3s]", system_msg)
         self.assertIn("[pause:4s]", system_msg)
 
+    def test_arabic_prompt_has_dialect_fidelity_rule(self):
+        with patch("llm._call_gemini", return_value="ok") as mock_gemini:
+            llm.rewrite_script(
+                context_text="",
+                user_prompt="test",
+                provider="gemini",
+                language="Arabic (العربية)",
+                dialect="Syrian",
+            )
+        args, _ = mock_gemini.call_args
+        system_msg = args[0]
+        self.assertIn("Syrian/Levantine Arabic dialect", system_msg)
+        self.assertIn("DIALECT FIDELITY", system_msg)
+        self.assertIn("5-6 paragraphs", system_msg)
+        self.assertIn("RICHNESS", system_msg)
+
+    def test_arabic_prompt_defaults_to_standard_dialect(self):
+        with patch("llm._call_gemini", return_value="ok") as mock_gemini:
+            llm.rewrite_script(
+                context_text="",
+                user_prompt="test",
+                provider="gemini",
+                language="Arabic (العربية)",
+            )
+        args, _ = mock_gemini.call_args
+        system_msg = args[0]
+        self.assertIn("Standard Arabic (no dialect)", system_msg)
+
+    def test_english_prompt_unaffected_by_dialect(self):
+        with patch("llm._call_openrouter", return_value="ok") as mock_or:
+            llm.rewrite_script(
+                context_text="",
+                user_prompt="rain sounds",
+                provider="openrouter",
+                language="English",
+                dialect="Syrian",
+            )
+        args, _ = mock_or.call_args
+        system_msg = args[0]
+        self.assertNotIn("DIALECT FIDELITY", system_msg)
+        self.assertNotIn("Syrian", system_msg)
+
     def test_call_openai_raises_not_implemented(self):
         with self.assertRaises(NotImplementedError) as ctx:
             llm._call_openai("sys", "user")
         self.assertIn("ARABIC_LLM_PROVIDER", str(ctx.exception))
+
+    def test_call_openrouter_returns_text(self):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-test", "OPENROUTER_MODEL": "google/gemma-4-26b-a4b-it:free"}, clear=False):
+            with patch("llm.requests.post", return_value=_FakeResponse(200, {"choices": [{"message": {"content": "openrouter script [pause]"}}]})) as mock_post:
+                out = llm._call_openrouter("sys", "user")
+        self.assertIn("openrouter script", out)
+        url = mock_post.call_args.args[0]
+        self.assertEqual(url, "https://openrouter.ai/api/v1/chat/completions")
+        headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(headers["Authorization"], "Bearer sk-or-test")
+
+    def test_call_openrouter_raises_when_key_missing(self):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}, clear=False):
+            with self.assertRaises(RuntimeError):
+                llm._call_openrouter("sys", "user")
+
+    def test_call_openrouter_retries_on_429(self):
+        responses = [
+            _FakeResponse(429, {"error": "rate limited"}, text="rate limited"),
+            _FakeResponse(200, {"choices": [{"message": {"content": "ok"}}]}),
+        ]
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-test"}, clear=False):
+            with patch("llm.requests.post", side_effect=responses), patch("llm.time.sleep") as mock_sleep:
+                out = llm._call_openrouter("sys", "user")
+        self.assertEqual(out, "ok")
+        self.assertEqual([c.args[0] for c in mock_sleep.call_args_list], [1])
+
+    def test_rewrite_script_uses_openrouter_for_english(self):
+        with patch("llm._call_openrouter", return_value="openrouter script") as mock_or, \
+             patch("llm._call_ollama") as mock_ollama:
+            out = llm.rewrite_script(
+                context_text="",
+                user_prompt="rain sounds",
+                provider="openrouter",
+                language="English",
+            )
+        mock_or.assert_called_once()
+        mock_ollama.assert_not_called()
+        self.assertEqual(out, "openrouter script")
+
+    def test_rewrite_script_falls_back_to_ollama_when_openrouter_fails(self):
+        with patch("llm._call_openrouter", side_effect=RuntimeError("OpenRouter down")), \
+             patch("llm._call_ollama", return_value="ollama fallback"):
+            out = llm.rewrite_script(
+                context_text="",
+                user_prompt="rain sounds",
+                provider="openrouter",
+                language="English",
+            )
+        self.assertEqual(out, "ollama fallback")
+
+    def test_rewrite_script_falls_back_to_local_when_openrouter_and_ollama_fail(self):
+        with patch("llm._call_openrouter", side_effect=RuntimeError("OpenRouter down")), \
+             patch("llm._call_ollama", side_effect=RuntimeError("ollama down")):
+            out = llm.rewrite_script(
+                context_text="",
+                user_prompt="calm rain",
+                provider="openrouter",
+                language="English",
+            )
+        self.assertIn("[pause:2s]", out)
+        self.assertIn("calm rain", out)
+
+    def test_rewrite_script_openrouter_not_used_for_arabic(self):
+        with patch("llm._call_openrouter") as mock_or:
+            out = llm.rewrite_script(
+                context_text="",
+                user_prompt="صوت المطر",
+                provider="openrouter",
+                language="Arabic (العربية)",
+            )
+        mock_or.assert_not_called()
+        self.assertIn("[pause:2s]", out)
 
 
 if __name__ == "__main__":
