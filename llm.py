@@ -9,6 +9,13 @@ load_dotenv()
 _GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 _DEFAULT_GEMINI_FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest")
 
+# dialect -> (dialect rule for the prompt, dialect idiom label)
+_DIALECT_RULES = {
+    "Arabic": ("Standard Arabic (no dialect)", "Standard Arabic"),
+    "Syrian": ("Syrian/Levantine Arabic dialect", "Syrian/Levantine"),
+    "Egyptian": ("Egyptian Arabic dialect", "Egyptian"),
+}
+
 
 def _redact_api_key(value: str) -> str:
     if not value:
@@ -160,6 +167,7 @@ def rewrite_script(
     vocal_tone: str = "Soft Spoken",
     user_info: str = "",
     language: str = "English",
+    dialect: str = "Arabic",
 ) -> str:
     is_arabic = "arabic" in language.strip().lower()
     if provider is None:
@@ -189,16 +197,22 @@ def rewrite_script(
     )
 
     if is_arabic:
+        dialect_rule, dialect_idiom = _DIALECT_RULES.get(dialect, _DIALECT_RULES["Arabic"])
         system_msg += (
-            "6. STRUCTURE: Divide the script into 4-6 paragraphs separated by blank lines. "
-            "Each paragraph should be 2-3 sentences.\n"
-            "7. VARY PAUSE DURATIONS: Use [pause], [pause:2s], [pause:3s], and [pause:4s] "
-            "throughout — not just the default [pause]. This creates natural pacing.\n"
+            f"Language rule: Write the spoken script in Arabic only using {dialect_rule}.\n"
+            f"DIALECT FIDELITY (CRITICAL): The ENTIRE script — every sentence of BOTH the narration and the dialogue — must be written in {dialect_rule}. Do NOT write narration in Standard/Formal Arabic while only the dialogue uses the dialect. Sustain the requested dialect consistently from the first word to the last, using {dialect_idiom} vocabulary, word order, and everyday speech patterns throughout.\n"
+            "6. STRUCTURE: Divide the script into 5-6 paragraphs of roughly equal length, separated by blank lines.\n"
+            "7. TIMING: The script MUST reach the target word count — do NOT finish early. Expand with sensory detail, dialogue, and scene-setting to reach the target.\n"
+            "8. RICHNESS: Use vivid sensory language (sights, sounds, smells, textures). Include dialogue and a clear narrative arc: introduction, discovery, encounter, lesson, resolution. Use natural "
+            f"{dialect_idiom} idioms and expressions to make the story feel authentic.\n"
+            "9. VARY PAUSE DURATIONS: Use [pause], [pause:2s], [pause:3s], and [pause:4s] throughout — not just the default [pause]. This creates natural pacing.\n"
         )
 
     if user_info.strip():
-        rule_num = "8" if is_arabic else "6"
-        system_msg += f"{rule_num}. Personal Attention: You have been provided with the User's Personal Info. You MUST seamlessly and naturally weave these details (like their name, age, or hobbies) into the ASMR script to provide a deeply personal, comforting experience.\n"
+        if is_arabic:
+            system_msg += "10. PERSONAL ATTENTION: You have been provided with the User's Personal Info. Address the listener directly and by name. Weave the provided personal details (e.g. name, age, family, work, hobbies) naturally and prominently throughout the script — not just once — so the listener feels personally addressed. If the info mentions family or loved ones, frame the story as one told to them.\n"
+        else:
+            system_msg += "6. Personal Attention: You have been provided with the User's Personal Info. You MUST seamlessly and naturally weave these details (like their name, age, or hobbies) into the ASMR script to provide a deeply personal, comforting experience.\n"
 
     user_msg = f"User Instructions / Topic: {user_prompt if user_prompt else 'Create a general relaxing experience.'}\n\n"
 
@@ -219,6 +233,16 @@ def rewrite_script(
             return _call_openai(system_msg, user_msg)
         except NotImplementedError:
             raise
+    elif provider == "openrouter":
+        if is_arabic:
+            return _local_fallback_script(user_prompt)
+        try:
+            return _call_openrouter(system_msg, user_msg)
+        except RuntimeError:
+            try:
+                return _call_ollama(system_msg, user_msg)
+            except RuntimeError:
+                return _local_fallback_script(user_prompt)
     elif provider == "gemini":
         try:
             return _call_gemini(system_msg, user_msg)
@@ -262,6 +286,43 @@ def _call_ollama(system_msg: str, user_msg: str, model: str | None = None) -> st
             continue
             
     raise RuntimeError(f"Ollama LLM call failed on all endpoints. Last error: {last_err}. Check if model '{model}' is pulled.")
+
+def _call_openrouter(system_msg: str, user_msg: str) -> str:
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not api_key or _is_placeholder_key(api_key):
+        raise RuntimeError("OPENROUTER_API_KEY is missing or is a placeholder.")
+    model = os.getenv("OPENROUTER_MODEL", "google/gemma-4-26b-a4b-it:free").strip()
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ],
+        "stream": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    last_err = None
+    for attempt in range(4):
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=90)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+            if _is_transient_status(resp.status_code):
+                last_err = RuntimeError(f"OpenRouter HTTP {resp.status_code}")
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"OpenRouter HTTP {resp.status_code}: {resp.text[:200]}")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            last_err = e
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"OpenRouter LLM call failed after retries. Last error: {last_err}")
 
 def _call_openai(system_msg: str, user_msg: str) -> str:
     raise NotImplementedError(

@@ -5,12 +5,6 @@ import io
 import numpy as np
 import soundfile as sf
 
-try:
-    from kokoro import KPipeline
-    KOKORO_AVAILABLE = True
-except ImportError:
-    KOKORO_AVAILABLE = False
-
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -67,9 +61,8 @@ def generate_fish_audio(
             "Fish Audio backend requires fish_audio_tts.py and 'requests'."
         ) from exc
 
-    # Strip non-Arabic text artifacts (URLs, English words) that cause noise.
+    # Strip URL artifacts that cause noise.
     text = re.sub(r'https?://\S+', '', text)
-    text = re.sub(r'\b[a-zA-Z]{3,}\b', '', text)
 
     # Normalize Arabic orthography BEFORE converting silence markers,
     # so normalize_arabic() preserves the <<SILENCE>> markers and does not
@@ -122,23 +115,17 @@ def generate_fish_audio(
     return _resample_linear(data, int(sample_rate), 24000)
 
 
-def create_tts_pipeline(lang_code="a"):
-    if KOKORO_AVAILABLE:
-        return KPipeline(lang_code=lang_code)
-    return None
-
-
-def synthesize(pipeline, text: str, voices=None, speed=0.85, vocal_tone="Soft Spoken") -> bytes:
+def synthesize(text: str, voices=None, speed=0.85, vocal_tone="Soft Spoken") -> bytes:
     if not isinstance(text, str):
         raise TypeError("text must be a string")
     if not text.strip():
         raise ValueError("text must not be empty")
 
     if voices is None:
-        voices = ["af_bella"]
+        voices = ["fish_0de68eaa0cc5438389b82bba728c8e39"]
     voices = [voices] if isinstance(voices, str) else voices
     if not voices:
-        voices = ["af_bella"]
+        voices = ["fish_0de68eaa0cc5438389b82bba728c8e39"]
 
     if vocal_tone == "Whispering":
         speed = max(0.65, speed - 0.1)
@@ -149,39 +136,15 @@ def synthesize(pipeline, text: str, voices=None, speed=0.85, vocal_tone="Soft Sp
 
     all_audio = []
     sample_rate = 24000
-    silence_regex = re.compile(r'<<SILENCE(\d+)MS>>')
 
     for i, paragraph in enumerate(paragraphs):
         current_voice = voices[i % len(voices)]
-        is_arabic_voice = current_voice.startswith("fish_")
-
-        if not is_arabic_voice and (not KOKORO_AVAILABLE or pipeline is None):
-            raise ImportError("Kokoro TTS is required but missing. Run `uv sync`.")
-
-        parts = silence_regex.split(paragraph)
-
-        for j, part in enumerate(parts):
-            if j % 2 == 1:
-                duration_ms = int(part)
-                num_samples = int((duration_ms / 1000.0) * sample_rate)
-                if num_samples > 0:
-                    all_audio.append(np.zeros(num_samples, dtype=np.float32))
-            else:
-                text_part = part.strip()
-                if text_part:
-                    if is_arabic_voice:
-                        extracted_id = current_voice[5:] if current_voice.startswith("fish_") else None
-                        all_audio.append(generate_fish_audio(
-                            text_part, speed=speed,
-                            vocal_tone=vocal_tone,
-                            voice_id=extracted_id or None,
-                        ))
-                    else:
-                        generator = pipeline(text_part, voice=current_voice, speed=speed, split_pattern=r"\n+")
-                        for _, _, audio in generator:
-                            if audio is None:
-                                raise RuntimeError("TTS engine returned an empty audio chunk.")
-                            all_audio.append(audio)
+        extracted_id = current_voice[5:] if current_voice.startswith("fish_") else None
+        all_audio.append(generate_fish_audio(
+            paragraph, speed=speed,
+            vocal_tone=vocal_tone,
+            voice_id=extracted_id or None,
+        ))
 
     if not all_audio:
         raise RuntimeError("TTS failed to produce any audio segments.")

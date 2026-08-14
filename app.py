@@ -24,7 +24,7 @@ if __name__ == "__main__" and not _is_running_with_streamlit():
 
 import streamlit as st
 from llm import rewrite_script
-from tts import create_tts_pipeline, synthesize
+from tts import synthesize
 from stt import create_stt_pipeline, transcribe
 from content_fetcher import fetch_content
 from preprocess_arabic import normalize_arabic
@@ -106,18 +106,13 @@ def sanitize_text(text: str) -> str:
 
 ENGLISH_VOICE_CATEGORIES = {
     "Soft Spoken": {
-        "Bella (American Female)": "af_bella",
-        "Sarah (American Female)": "af_sarah",
-        "Alloy (American Female)": "af_alloy",
-        "Adam (American Male)": "am_adam",
-        "Michael (American Male)": "am_michael",
-        "Emma (British Female)": "bf_emma",
-        "George (British Male)": "bm_george",
+        "ASMR English Female 1": "fish_ca3007f96ae7499ab87d27ea3599956a",
+        "ASMR English Female 2": "fish_3c97242aa71c44bdbc48713365768b2a",
     },
     "Whispering": {
-        "Nicole (American Female)": "af_nicole",
-        "Isabella (British Female)": "bf_isabella",
-        "Lewis (British Male)": "bm_lewis",
+        "ASMR English Female 5": "fish_efee6c804185420fb89955186451df85",
+        "ASMR English Female 3": "fish_f06431add405433ba777a323911f0dfd",
+        "ASMR English Female 4": "fish_084446cf1e7a4b16bafd19459ef12a06",
     },
 }
 
@@ -125,7 +120,9 @@ ARABIC_VOICES = {
     "Whispering": {
         "ASMR 1 (Arabic Female)": "fish_0de68eaa0cc5438389b82bba728c8e39",
         "ASMR 2 (Arabic Female)": "fish_2689bc84ab944610af10bf64e586684a",
-        "ASMR 3 (Arabic Female)": "fish_f276af83bc3c421595e27b80304f8ba0",
+        "ASMR Syrian Female": "fish_4866140585d14d8aaaebcea8c7f0876f",
+        "ASMR Egyptian Female 1": "fish_26bf953181e14b92806a4b2754513fea",
+        "ASMR Egyptian Female 2": "fish_f276af83bc3c421595e27b80304f8ba0",
     },
     "Soft Spoken": {
         "ASMR 4 (Arabic Female)": "fish_7eee0787bf1a476fb0864270853e344a",
@@ -133,17 +130,37 @@ ARABIC_VOICES = {
     },
 }
 
+# Whispering voices are dialect-specific; Soft Spoken voices are not.
+_ARABIC_WHISPERING_BY_DIALECT = {
+    "Arabic": {
+        "ASMR 1 (Arabic Female)": "fish_0de68eaa0cc5438389b82bba728c8e39",
+        "ASMR 2 (Arabic Female)": "fish_2689bc84ab944610af10bf64e586684a",
+    },
+    "Syrian": {
+        "ASMR Syrian Female": "fish_4866140585d14d8aaaebcea8c7f0876f",
+    },
+    "Egyptian": {
+        "ASMR Egyptian Female 1": "fish_26bf953181e14b92806a4b2754513fea",
+        "ASMR Egyptian Female 2": "fish_f276af83bc3c421595e27b80304f8ba0",
+    },
+}
 
-def get_available_voices(selected_language: str, vocal_tone: str) -> dict[str, str]:
+
+def get_available_voices(selected_language: str, vocal_tone: str, dialect: str = "Arabic") -> dict[str, str]:
     if selected_language.startswith("Arabic"):
+        if vocal_tone == "Whispering":
+            return _ARABIC_WHISPERING_BY_DIALECT.get(dialect, _ARABIC_WHISPERING_BY_DIALECT["Arabic"])
         return ARABIC_VOICES.get(vocal_tone, ARABIC_VOICES["Whispering"])
     return ENGLISH_VOICE_CATEGORIES[vocal_tone]
 
 
-def _resolve_user_prompt(selected_language: str, arabic_prompt: str, audio_file) -> tuple[str, str]:
+def _resolve_user_prompt(selected_language: str, arabic_prompt: str, english_prompt: str, audio_file) -> tuple[str, str]:
     normalized_language = selected_language.strip().lower()
     if normalized_language.startswith("arabic"):
         return arabic_prompt.strip(), "typed"
+
+    if english_prompt.strip():
+        return english_prompt.strip(), "typed"
 
     if audio_file:
         stt_pipe = create_stt_pipeline()
@@ -151,6 +168,23 @@ def _resolve_user_prompt(selected_language: str, arabic_prompt: str, audio_file)
         return transcribed, "transcribed"
 
     return "", "empty"
+
+
+def _synthesize_and_display(clean_script: str, selected_voice_ids, vocal_tone: str) -> None:
+    with st.expander("View TTS-Ready Script", expanded=False):
+        st.write(clean_script.replace("<<SILENCE", "\n\n*(Silence: ").replace("MS>>", " ms)*\n\n"))
+
+    with st.spinner("Synthesizing audio (this may take a moment)..."):
+        try:
+            audio_bytes = synthesize(clean_script, voices=selected_voice_ids, vocal_tone=vocal_tone)
+            st.session_state.audio_bytes = audio_bytes
+            logger.info("Audio synthesis complete.")
+            st.success("ASMR Audio Generated Successfully!")
+            st.audio(audio_bytes, format="audio/wav")
+        except Exception as e:
+            logger.error(f"TTS Synthesis Failed: {str(e)}")
+            st.error(f"Failed to synthesize audio: {str(e)}")
+
 
 def main():
     st.set_page_config(page_title="AI ASMR Generator", layout="centered")
@@ -192,7 +226,12 @@ def main():
         horizontal=True,
     )
 
+    dialect = "Arabic"
+    if selected_language.startswith("Arabic"):
+        dialect = st.selectbox("Dialect", ["Arabic", "Syrian", "Egyptian"])
+
     arabic_prompt = ""
+    english_prompt = ""
     audio_file = None
     if selected_language.startswith("Arabic"):
         arabic_prompt = st.text_area(
@@ -200,12 +239,16 @@ def main():
             placeholder="اكتب التعليمات العربية هنا...",
         )
     else:
-        audio_file = st.audio_input("Voice Prompt (Instruct the ASMR topic & style)")
+        english_prompt = st.text_area(
+            "English Written Prompt",
+            placeholder="e.g. Explain the soothing sound of gentle rain falling on a window and a show relaxing whisper",
+        )
+        audio_file = st.audio_input("Or record a Voice Prompt (Instruct the ASMR topic & style)")
 
     # Fix 1: Vocal tone selection strictly precedes and filters the voice selection
-    vocal_tone = st.radio("2. Vocal Tone Preference", ["Soft Spoken", "Whispering"], horizontal=True)
+    vocal_tone = st.radio("2. Vocal Tone Preference", ["Whispering", "Soft Spoken"], horizontal=True)
     
-    available_voices = get_available_voices(selected_language, vocal_tone)
+    available_voices = get_available_voices(selected_language, vocal_tone, dialect)
     
     selected_voice_names = st.multiselect(
         "3. Select Voice(s) (Filtered by tone; will alternate per paragraph)", 
@@ -218,71 +261,59 @@ def main():
     
     st.markdown("---")
     
-    col1, col2 = st.columns(2)
-    generate_new = col1.button("✨ Generate New ASMR")
-    
-    regenerate_audio = col2.button("🔄 Re-Synthesize (Use Existing Script)", disabled="clean_script" not in st.session_state)
+    generate_new = st.button("✨ Generate New ASMR")
 
-    if generate_new or regenerate_audio:
-        logger.info("--- New Generation/Synthesis Started ---")
-        
-        if regenerate_audio and "clean_script" in st.session_state:
-            clean_script = st.session_state.clean_script
-            st.info("Using previously generated script for synthesis...")
-        else:
-            with st.spinner("Processing inputs & transcribing..."):
-                user_text, prompt_mode = _resolve_user_prompt(selected_language, arabic_prompt, audio_file)
-                if prompt_mode == "typed":
-                    if not user_text:
-                        st.error("Please enter Arabic written instructions before generating.")
-                        return
-                    logger.info(f"Arabic Written Prompt: {user_text}")
-                    st.info(f"**Arabic Written Instructions:** {user_text}")
-                elif prompt_mode == "transcribed":
-                    logger.info(f"Transcribed User Prompt: {user_text}")
-                    st.info(f"**Transcribed Instructions:** {user_text}")
-                
-                context = fetch_content(url) if url else ""
-                if context:
-                    logger.info(f"Fetched context from URL, length: {len(context)}")
-                
-            with st.spinner("Rewriting script for ASMR pacing..."):
-                try:
-                    script = rewrite_script(
-                        context_text=context, 
-                        user_prompt=user_text, 
-                        target_minutes=duration, 
-                        vocal_tone=vocal_tone,
-                        user_info=user_info, # Pass the new personal info down to the LLM
-                        language=selected_language,
-                    )
-                except Exception as e:
-                    logger.error(f"Script generation failed: {str(e)}")
-                    st.error(f"Failed to generate script: {str(e)}")
+    if generate_new:
+        logger.info("--- New Generation Started ---")
+        with st.spinner("Processing inputs & transcribing..."):
+            user_text, prompt_mode = _resolve_user_prompt(selected_language, arabic_prompt, english_prompt, audio_file)
+            if prompt_mode == "typed":
+                if not user_text:
+                    st.error("Please enter written instructions before generating.")
                     return
-                logger.info(f"Raw Generated Script:\n{script}")
-                
-                clean_script = sanitize_text(script)
-                st.session_state.clean_script = clean_script
-                logger.info(f"Sanitized TTS Script:\n{clean_script}")
-                
-        with st.expander("View TTS-Ready Script", expanded=True):
-            st.write(clean_script.replace("<<SILENCE", "\n\n*(Silence: ").replace("MS>>", " ms)*\n\n"))
-            
-        with st.spinner("Synthesizing audio (this may take a moment)..."):
-            tts_pipe = create_tts_pipeline()
+                is_arabic_ui = selected_language.startswith("Arabic")
+                label = "Arabic" if is_arabic_ui else "English"
+                logger.info(f"{label} Written Prompt: {user_text}")
+                st.info(f"**{label} Written Instructions:** {user_text}")
+            elif prompt_mode == "transcribed":
+                logger.info(f"Transcribed User Prompt: {user_text}")
+                st.info(f"**Transcribed Instructions:** {user_text}")
+
+            context = fetch_content(url) if url else ""
+            if context:
+                logger.info(f"Fetched context from URL, length: {len(context)}")
+
+        with st.spinner("Rewriting script for ASMR pacing..."):
             try:
-                audio_bytes = synthesize(tts_pipe, clean_script, voices=selected_voice_ids, vocal_tone=vocal_tone)
-                st.session_state.audio_bytes = audio_bytes
-                logger.info("Audio synthesis complete.")
-                
-                st.success("ASMR Audio Generated Successfully!")
-                st.audio(audio_bytes, format="audio/wav")
-                
+                script = rewrite_script(
+                    context_text=context,
+                    user_prompt=user_text,
+                    target_minutes=duration,
+                    vocal_tone=vocal_tone,
+                    user_info=user_info, # Pass the new personal info down to the LLM
+                    language=selected_language,
+                    dialect=dialect,
+                )
             except Exception as e:
-                logger.error(f"TTS Synthesis Failed: {str(e)}")
-                st.error(f"Failed to synthesize audio: {str(e)}")
-                
+                logger.error(f"Script generation failed: {str(e)}")
+                st.error(f"Failed to generate script: {str(e)}")
+                return
+            logger.info(f"Raw Generated Script:\n{script}")
+
+            clean_script = sanitize_text(script)
+            st.session_state.clean_script = clean_script
+            logger.info(f"Sanitized TTS Script:\n{clean_script}")
+
+        _synthesize_and_display(clean_script, selected_voice_ids, vocal_tone)
+
+    # Rendered after generation so it reflects the current session state (enabled once a script exists).
+    regenerate_audio = st.button("🔄 Re-Synthesize (Use Existing Script)", disabled="clean_script" not in st.session_state)
+    if regenerate_audio:
+        logger.info("--- Re-Synthesis Started ---")
+        clean_script = st.session_state.clean_script
+        st.info("Using previously generated script for synthesis...")
+        _synthesize_and_display(clean_script, selected_voice_ids, vocal_tone)
+
     # Fix 2 & Improvement 3: Replaced Tkinter OS dialog with Streamlit's native web-safe Download Button
     if "audio_bytes" in st.session_state:
         st.markdown("---")

@@ -129,10 +129,10 @@ class TestFishAudioTTSClient(unittest.TestCase):
 
 
 class TestFishBackendInApp(unittest.TestCase):
-    def test_synthesize_routes_arabic_voice_to_fish(self):
+    def test_synthesize_routes_voice_to_fish(self):
         with patch("tts.generate_fish_audio",
                    return_value=np.zeros(24000, dtype=np.float32)) as mock_fish:
-            out = tts.synthesize(pipeline=None, text="مرحباً بكم", voices=["fish_0de68eaa0cc5438389b82bba728c8e39"])
+            out = tts.synthesize(text="مرحباً بكم", voices=["fish_0de68eaa0cc5438389b82bba728c8e39"])
 
         mock_fish.assert_called_once()
         self.assertTrue(out.startswith(b"RIFF"))
@@ -146,7 +146,7 @@ class TestFishBackendInApp(unittest.TestCase):
 
         with patch("tts.generate_fish_audio", side_effect=fake_fish):
             tts.synthesize(
-                pipeline=None, text="مرحباً",
+                text="مرحباً",
                 voices=["fish_abc123voice"],
             )
 
